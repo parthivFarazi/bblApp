@@ -1,0 +1,26 @@
+{
+  "name": "Beer Baseball - Delta Upsilon League",
+  "short_name": "Beer Baseball",
+  "description": "Score tracking app for Beer Baseball games in the Delta Upsilon League",
+  "start_url": "/bblApp/",
+  "display": "standalone",
+  "background_color": "#166534",
+  "theme_color": "#166534",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/bblApp/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/bblApp/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["sports", "games", "utilities"],
+  "screenshots": []
+}
