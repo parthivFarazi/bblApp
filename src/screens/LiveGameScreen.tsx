@@ -34,7 +34,7 @@ export const LiveGameScreen = ({ navigation }: Props) => {
     return Boolean(bases.first || bases.second || bases.third);
   }, [live]);
 
-  const runnerId = live ? live.bases.first ?? live.bases.second ?? live.bases.third : null;
+  const runnerId = live ? live.bases.third ?? live.bases.second ?? live.bases.first : null;
   const defenders = live ? live.lineups[live.defenseTeamId]?.lineup ?? [] : [];
   const offenseLineup = live ? live.lineups[live.offenseTeamId] : undefined;
   const currentBatter = offenseLineup ? getCurrentBatter(offenseLineup) : undefined;
