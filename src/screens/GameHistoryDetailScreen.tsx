@@ -82,8 +82,9 @@ export const GameHistoryDetailScreen = ({ route, navigation }: Props) => {
       const runs = scoreboard[teamId]?.inningRuns ?? {};
       Object.keys(runs).forEach((inning) => inningSet.add(Number(inning)));
     });
-    return Array.from(inningSet).sort((a, b) => a - b);
-  }, [scoreboard, teamOrder]);
+    const maxInning = Math.max(1, game.plannedInnings ?? 0, ...Array.from(inningSet));
+    return Array.from({ length: maxInning }, (_, index) => index + 1);
+  }, [game.plannedInnings, scoreboard, teamOrder]);
 
   const getTeamName = (teamId: string, index: number) =>
     teamLabels[teamId] ?? (index === 0 ? 'Visitors' : 'Home');
@@ -115,28 +116,38 @@ export const GameHistoryDetailScreen = ({ route, navigation }: Props) => {
         </View>
 
         <Text style={styles.sectionTitle}>Inning Breakdown</Text>
-        <View style={styles.table}>
-          <View style={styles.tableHeader}>
-            <Text style={[styles.cell, styles.teamCell]}>Team</Text>
-            {innings.map((inning) => (
-              <Text key={inning} style={styles.cell}>
-                {inning}
-              </Text>
-            ))}
-            <Text style={styles.cell}>R</Text>
-          </View>
-          {teamOrder.map((teamId, index) => (
-            <View key={teamId} style={styles.tableRow}>
-              <Text style={[styles.cell, styles.teamCell]}>{getTeamName(teamId, index)}</Text>
+        <ScrollView
+          horizontal
+          style={styles.tableScroll}
+          contentContainerStyle={styles.tableContent}
+          showsHorizontalScrollIndicator={false}
+        >
+          <View style={styles.table}>
+            <View style={styles.tableHeader}>
+              <Text style={[styles.cell, styles.teamCell]}>Team</Text>
               {innings.map((inning) => (
-                <Text key={inning} style={styles.cell}>
-                  {scoreboard[teamId]?.inningRuns?.[inning] ?? 0}
+                <Text key={inning} style={[styles.cell, styles.numericCell]}>
+                  {inning}
                 </Text>
               ))}
-              <Text style={styles.cell}>{scoreboard[teamId]?.runs ?? 0}</Text>
+              <Text style={[styles.cell, styles.numericCell]}>R</Text>
             </View>
-          ))}
-        </View>
+            {teamOrder.map((teamId, index) => (
+              <View
+                key={teamId}
+                style={[styles.tableRow, index % 2 === 0 && styles.rowAlt]}
+              >
+                <Text style={[styles.cell, styles.teamCell]}>{getTeamName(teamId, index)}</Text>
+                {innings.map((inning) => (
+                  <Text key={inning} style={[styles.cell, styles.numericCell]}>
+                    {scoreboard[teamId]?.inningRuns?.[inning] ?? 0}
+                  </Text>
+                ))}
+                <Text style={[styles.cell, styles.numericCell]}>{scoreboard[teamId]?.runs ?? 0}</Text>
+              </View>
+            ))}
+          </View>
+        </ScrollView>
 
         <Text style={styles.sectionTitle}>Player Highlights</Text>
         <View style={styles.card}>
@@ -145,11 +156,11 @@ export const GameHistoryDetailScreen = ({ route, navigation }: Props) => {
               <View>
                 <Text style={styles.leaderName}>{leader.displayName}</Text>
                 <Text style={styles.leaderMeta}>
-                  {leader.stats.hits} H • AVG {leader.stats.battingAverage.toFixed(3)} • SLG{' '}
-                  {leader.stats.slugging.toFixed(3)}
+                  {leader.stats.hits} H • AVG {leader.stats.battingAverage.toFixed(3)} • RBI{' '}
+                  {leader.stats.rbi}
                 </Text>
               </View>
-              <Text style={styles.leaderRBI}>{leader.stats.rbi} RBI</Text>
+              <Text style={styles.leaderRBI}>{leader.stats.slugging.toFixed(3)} SLG</Text>
             </View>
           ))}
           {!leaders.length && (
@@ -222,25 +233,52 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     borderColor: '#1F2937',
+    backgroundColor: '#0B1220',
+    overflow: 'hidden',
   },
   tableHeader: {
     flexDirection: 'row',
-    backgroundColor: '#1E293B',
+    backgroundColor: '#111827',
+    borderBottomWidth: 1,
+    borderBottomColor: '#1F2937',
   },
   tableRow: {
     flexDirection: 'row',
     backgroundColor: '#0F172A',
+    borderTopWidth: 1,
+    borderTopColor: '#111827',
+  },
+  rowAlt: {
+    backgroundColor: '#0D1527',
   },
   cell: {
-    flex: 1,
-    padding: 10,
+    width: 60,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
     color: '#E2E8F0',
-    textAlign: 'center',
+    borderRightWidth: 1,
+    borderRightColor: '#1F2937',
+    fontVariant: ['tabular-nums'],
+    flexShrink: 0,
+    flexGrow: 0,
+  },
+  numericCell: {
+    textAlign: 'right',
+    paddingRight: 12,
+    paddingLeft: 8,
   },
   teamCell: {
-    flex: 2,
+    width: 140,
+    paddingLeft: 14,
+    paddingRight: 8,
     textAlign: 'left',
     fontWeight: '600',
+  },
+  tableScroll: {
+    marginTop: 8,
+  },
+  tableContent: {
+    flexGrow: 1,
   },
   leaderRow: {
     flexDirection: 'row',

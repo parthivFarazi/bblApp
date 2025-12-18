@@ -1,6 +1,7 @@
 import { FC, useMemo, useRef, useState } from 'react';
 import {
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -22,7 +23,6 @@ import { PlayerIdentity } from '@/types';
 type Step = 'names' | 'teamA' | 'teamB' | 'confirm';
 type TeamKey = 'teamA' | 'teamB';
 
-const inningsOptions = [3, 5, 7, 9];
 const stepOrder: Step[] = ['names', 'teamA', 'teamB', 'confirm'];
 
 const slugify = (value: string) => value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-');
@@ -45,20 +45,23 @@ export const LeagueSetupScreen: FC<Props> = ({ navigation }) => {
   const addPlayer = usePlayerStore((state) => state.addPlayer);
   const savedLeagues = useLeagueStore((state) => state.leagues);
   const addLeaguePreset = useLeagueStore((state) => state.addLeague);
+  const teams = useTeamStore((state) => state.teams);
   const ensureTeamProfile = useTeamStore((state) => state.ensureTeam);
   const [step, setStep] = useState<Step>('names');
   const [teamAName, setTeamAName] = useState('Home Team');
   const [teamBName, setTeamBName] = useState('Away Team');
   const [leagueName, setLeagueName] = useState('Official League');
   const [leagueYear, setLeagueYear] = useState(`${new Date().getFullYear()}`);
-  const [innings, setInnings] = useState(7);
-  const [lineups, setLineups] = useState<{ teamA: PlayerIdentity[]; teamB: PlayerIdentity[] }>(() => {
-    const players = Object.values(playerDirectory);
-    return {
-      teamA: players.slice(0, 4),
-      teamB: players.slice(4, 8) || players.slice(0, 4),
-    };
-  });
+  const [selectedLeagueId, setSelectedLeagueId] = useState<string>('new');
+  const [leagueSelect, setLeagueSelect] = useState<{ options: Array<{ id: string; label: string; meta?: string }> } | null>(null);
+  const [teamNameModal, setTeamNameModal] = useState<{
+    target: 'home' | 'away';
+    options: Array<{ id: string; label: string }>;
+  } | null>(null);
+  const [lineups, setLineups] = useState<{ teamA: PlayerIdentity[]; teamB: PlayerIdentity[] }>(() => ({
+    teamA: [],
+    teamB: [],
+  }));
   const [search, setSearch] = useState<{ teamA: string; teamB: string }>({
     teamA: '',
     teamB: '',
@@ -67,12 +70,58 @@ export const LeagueSetupScreen: FC<Props> = ({ navigation }) => {
     first: '',
     last: '',
   });
+  const [selectModal, setSelectModal] = useState<{
+    teamKey: TeamKey;
+    options: Array<{ id: string; label: string; meta: string; disabled: boolean }>;
+  } | null>(null);
   const searchInputRefs = {
     teamA: useRef<TextInput>(null),
     teamB: useRef<TextInput>(null),
   };
 
   const allPlayers = useMemo(() => Object.values(playerDirectory), [playerDirectory]);
+  const playerLookup = useMemo(() => {
+    const map = new Map<string, PlayerIdentity>();
+    allPlayers.forEach((player) => map.set(player.id, player));
+    return map;
+  }, [allPlayers]);
+  const leagueOptions = useMemo(
+    () =>
+      [...savedLeagues]
+        .map((league) => ({
+          id: league.id,
+          label: `${league.name} (${league.year})`,
+          year: league.year,
+          name: league.name,
+        }))
+        .sort((a, b) => b.year - a.year || a.label.localeCompare(b.label)),
+    [savedLeagues],
+  );
+  const leaguePresetMap = useMemo(() => {
+    const map = new Map<string, { name: string; year: number }>();
+    savedLeagues.forEach((league) => map.set(league.id, { name: league.name, year: league.year }));
+    return map;
+  }, [savedLeagues]);
+
+  const handleLeagueSelect = (choiceId: string) => {
+    setSelectedLeagueId(choiceId);
+    if (choiceId !== 'new') {
+      const preset = leaguePresetMap.get(choiceId);
+      if (preset) {
+        setLeagueName(preset.name);
+        setLeagueYear(String(preset.year));
+      }
+    }
+    setLeagueSelect(null);
+  };
+
+  const leagueTeamOptions = useMemo(() => {
+    if (!selectedLeagueId || selectedLeagueId === 'new') return [];
+    return Object.values(teams)
+      .filter((team) => team.leagueId === selectedLeagueId)
+      .map((team) => ({ id: team.id, label: team.name }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [selectedLeagueId, teams]);
 
   const updateLineups = (updater: (prev: { teamA: PlayerIdentity[]; teamB: PlayerIdentity[] }) => {
     teamA: PlayerIdentity[];
@@ -149,6 +198,25 @@ export const LeagueSetupScreen: FC<Props> = ({ navigation }) => {
     const filteredPlayers = directory.filter((player) =>
       player.displayName.toLowerCase().includes(search[teamKey].toLowerCase()),
     );
+
+    const openSelect = () => {
+      setSelectModal({
+        teamKey,
+        options: filteredPlayers.map((player) => {
+          const inThisTeam = lineups[teamKey].some((slot) => slot.id === player.id);
+          const inOtherTeam = lineups[otherKey].some((slot) => slot.id === player.id);
+          const metaParts = ['Brother'];
+          if (inOtherTeam) metaParts.push('on Opponent');
+          if (inThisTeam) metaParts.push('Already added');
+          return {
+            id: player.id,
+            label: player.displayName,
+            meta: metaParts.join(' • '),
+            disabled: inThisTeam,
+          };
+        }),
+      });
+    };
     return (
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>{title}</Text>
@@ -163,7 +231,6 @@ export const LeagueSetupScreen: FC<Props> = ({ navigation }) => {
                 <Text style={styles.lineNumber}>{index + 1}</Text>
                 <View>
                   <Text style={styles.lineName}>{player.displayName}</Text>
-                  {player.isGuest && <Text style={styles.badge}>Guest</Text>}
                 </View>
               </View>
               <View style={styles.lineActions}>
@@ -237,33 +304,42 @@ export const LeagueSetupScreen: FC<Props> = ({ navigation }) => {
             </Pressable>
           </View>
         )}
+        {!!filteredPlayers.length && (
+          <View style={styles.suggestionList}>
+            <Text style={styles.suggestionLabel}>Suggestions</Text>
+            {filteredPlayers.slice(0, 6).map((player) => {
+              const inThisTeam = lineups[teamKey].some((slot) => slot.id === player.id);
+              const inOtherTeam = lineups[otherKey].some((slot) => slot.id === player.id);
+              const metaParts = ['Brother'];
+              if (inOtherTeam) metaParts.push('on Opponent');
+              return (
+                <Pressable
+                  key={player.id}
+                  style={[styles.suggestionRow, inThisTeam && styles.optionDisabled]}
+                  disabled={inThisTeam}
+                  onPress={() => assignPlayer(teamKey, player)}
+                >
+                  <View>
+                    <Text style={styles.suggestionName}>{player.displayName}</Text>
+                    <Text style={styles.suggestionMeta}>{metaParts.join(' • ')}</Text>
+                  </View>
+                  <Text style={styles.suggestionAction}>{inThisTeam ? 'Added' : 'Add'}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        )}
         <Text style={styles.subheading}>Available Players</Text>
-        <View style={styles.playerGrid}>
-          {filteredPlayers.map((player) => {
-            const inThisTeam = lineups[teamKey].some((slot) => slot.id === player.id);
-            const inOtherTeam = lineups[otherKey].some((slot) => slot.id === player.id);
-            return (
-              <Pressable
-                key={player.id}
-                style={[
-                  styles.playerChip,
-                  inThisTeam && styles.playerChipActive,
-                  inOtherTeam && styles.playerChipWarning,
-                ]}
-                onPress={() => assignPlayer(teamKey, player)}
-              >
-                <Text style={styles.playerChipLabel}>{player.displayName}</Text>
-                <Text style={styles.playerChipMeta}>
-                  Brother
-                  {inOtherTeam ? ' • on Opponent' : ''}
-                </Text>
-              </Pressable>
-            );
-          })}
-          {!filteredPlayers.length && (
-            <Text style={styles.placeholder}>No players match that search.</Text>
-          )}
-        </View>
+        <SelectTrigger
+          label="Add player to lineup"
+          helper={
+            filteredPlayers.length
+              ? 'Search to narrow, then tap to choose'
+              : 'No players match that search'
+          }
+          disabled={!filteredPlayers.length}
+          onPress={openSelect}
+        />
       </View>
     );
   };
@@ -299,10 +375,37 @@ export const LeagueSetupScreen: FC<Props> = ({ navigation }) => {
     if (step === 'names') {
       return (
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>League Details</Text>
-          <Text style={styles.sectionCopy}>
-            Name the league matchup and customize both teams before launching the scorebook.
-          </Text>
+        <Text style={styles.sectionTitle}>League Details</Text>
+        <Text style={styles.sectionCopy}>
+          Name the league matchup and customize both teams before launching the scorebook.
+        </Text>
+        <View style={styles.select}>
+            <Text style={styles.selectLabel}>League</Text>
+            <Pressable
+              style={styles.selectControl}
+              onPress={() =>
+                setLeagueSelect({
+                  options: [
+                    { id: 'new', label: 'Create New League', meta: 'Start fresh with a new name' },
+                    ...leagueOptions.map((option) => ({
+                      id: option.id,
+                      label: option.label,
+                      meta: `Year ${option.year}`,
+                    })),
+                  ],
+                })
+              }
+            >
+              <Text style={styles.selectValue}>
+                {selectedLeagueId === 'new'
+                  ? leagueName || 'Create New League'
+                  : leagueOptions.find((opt) => opt.id === selectedLeagueId)?.label ?? 'Select league'}
+              </Text>
+              <Text style={styles.selectCaret}>▾</Text>
+            </Pressable>
+            <Text style={styles.selectHelper}>Pick a saved league or start a new one.</Text>
+          </View>
+
           <TextInput
             style={styles.input}
             value={leagueName}
@@ -318,25 +421,6 @@ export const LeagueSetupScreen: FC<Props> = ({ navigation }) => {
             placeholderTextColor="#475569"
             keyboardType="number-pad"
           />
-          {savedLeagues.length > 0 && (
-            <View style={styles.savedLeagueList}>
-              <Text style={styles.subheading}>Saved Leagues</Text>
-              {savedLeagues.map((league) => (
-                <Pressable
-                  key={league.id}
-                  style={styles.leagueChip}
-                  onPress={() => {
-                    setLeagueName(league.name);
-                    setLeagueYear(String(league.year));
-                  }}
-                >
-                  <Text style={styles.leagueChipLabel}>
-                    {league.name} ({league.year})
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-          )}
           <Pressable
             style={styles.outlineButton}
             onPress={() => {
@@ -347,6 +431,7 @@ export const LeagueSetupScreen: FC<Props> = ({ navigation }) => {
               const yearNumber = Number(leagueYear) || new Date().getFullYear();
               const id = `${slugify(cleanedName)}-${yearNumber}`;
               addLeaguePreset({ id, name: cleanedName, year: yearNumber });
+              setSelectedLeagueId(id);
             }}
           >
             <Text style={styles.outlineButtonLabel}>Save League Preset</Text>
@@ -359,6 +444,21 @@ export const LeagueSetupScreen: FC<Props> = ({ navigation }) => {
             placeholder="Home Team"
             placeholderTextColor="#475569"
           />
+          <SelectTrigger
+            label="Use previous Home team name"
+            helper={
+              leagueTeamOptions.length
+                ? 'Pick from teams already in this league'
+                : 'No saved teams yet for this league'
+            }
+            disabled={!leagueTeamOptions.length}
+            onPress={() =>
+              setTeamNameModal({
+                target: 'home',
+                options: leagueTeamOptions,
+              })
+            }
+          />
           <Text style={styles.subheading}>Away Team Name</Text>
           <TextInput
             style={styles.input}
@@ -367,22 +467,22 @@ export const LeagueSetupScreen: FC<Props> = ({ navigation }) => {
             placeholder="Away Team"
             placeholderTextColor="#475569"
           />
-          <Text style={styles.subheading}>Planned Innings</Text>
-          <View style={styles.segment}>
-            {inningsOptions.map((option) => (
-              <Pressable
-                key={option}
-                style={[styles.segmentOption, innings === option && styles.segmentSelected]}
-                onPress={() => setInnings(option)}
-              >
-                <Text
-                  style={[styles.segmentLabel, innings === option && styles.segmentLabelActive]}
-                >
-                  {option}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
+          <SelectTrigger
+            label="Use previous Away team name"
+            helper={
+              leagueTeamOptions.length
+                ? 'Pick from teams already in this league'
+                : 'No saved teams yet for this league'
+            }
+            disabled={!leagueTeamOptions.length}
+            placeholder="Choose team"
+            onPress={() =>
+              setTeamNameModal({
+                target: 'away',
+                options: leagueTeamOptions,
+              })
+            }
+          />
         </View>
       );
     }
@@ -411,7 +511,6 @@ export const LeagueSetupScreen: FC<Props> = ({ navigation }) => {
       awayTeamId,
       homeTeamName: teamAName,
       awayTeamName: teamBName,
-      innings,
       leagueTeamMembers: members,
     });
     navigation.navigate('LiveGame');
@@ -423,31 +522,33 @@ export const LeagueSetupScreen: FC<Props> = ({ navigation }) => {
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <ScrollView contentContainerStyle={styles.container}>
-          <View style={styles.progress}>
-            {stepOrder.map((label) => (
-              <View key={label} style={styles.progressItem}>
-                <View
-                  style={[
-                    styles.progressDot,
-                    step === label && styles.progressDotActive,
-                  ]}
-                />
-                <Text
-                  style={[
-                    styles.progressLabel,
-                    step === label && styles.progressLabelActive,
-                  ]}
-                >
-                  {label.toUpperCase()}
-                </Text>
-              </View>
-            ))}
-          </View>
+        <View style={{ flex: 1 }}>
+          <ScrollView contentContainerStyle={[styles.container, styles.scrollContent]}>
+            <View style={styles.progress}>
+              {stepOrder.map((label) => (
+                <View key={label} style={styles.progressItem}>
+                  <View
+                    style={[
+                      styles.progressDot,
+                      step === label && styles.progressDotActive,
+                    ]}
+                  />
+                  <Text
+                    style={[
+                      styles.progressLabel,
+                      step === label && styles.progressLabelActive,
+                    ]}
+                  >
+                    {label.toUpperCase()}
+                  </Text>
+                </View>
+              ))}
+            </View>
 
-          {renderCurrentStep()}
+            {renderCurrentStep()}
+          </ScrollView>
 
-          <View style={styles.footer}>
+          <View style={styles.footerBar}>
             <Pressable style={styles.secondaryButton} onPress={goBack}>
               <Text style={styles.secondaryButtonLabel}>Back</Text>
             </Pressable>
@@ -472,11 +573,115 @@ export const LeagueSetupScreen: FC<Props> = ({ navigation }) => {
               </Pressable>
             )}
           </View>
-        </ScrollView>
+        </View>
       </KeyboardAvoidingView>
+      <LeagueSelectModal
+        modal={leagueSelect}
+        onClose={() => setLeagueSelect(null)}
+        onSelect={handleLeagueSelect}
+      />
+      <TeamNameSelectModal
+        modal={teamNameModal}
+        onClose={() => setTeamNameModal(null)}
+        onSelect={(target, value) => {
+          if (target === 'home') {
+            setTeamAName(value);
+          } else {
+            setTeamBName(value);
+          }
+          setTeamNameModal(null);
+        }}
+      />
     </SafeAreaView>
   );
 };
+
+type SelectTriggerProps = {
+  label: string;
+  helper?: string;
+  disabled?: boolean;
+  onPress: () => void;
+  placeholder?: string;
+};
+
+const SelectTrigger = ({ label, helper, disabled, onPress, placeholder }: SelectTriggerProps) => (
+  <View style={styles.select}>
+    <Text style={styles.selectLabel}>{label}</Text>
+    <Pressable
+      style={[styles.selectControl, disabled && styles.selectDisabled]}
+      onPress={onPress}
+      disabled={disabled}
+    >
+      <Text style={styles.selectValue}>{disabled ? 'No players found' : placeholder ?? 'Choose team'}</Text>
+      <Text style={styles.selectCaret}>▾</Text>
+    </Pressable>
+    {helper && <Text style={styles.selectHelper}>{helper}</Text>}
+  </View>
+);
+
+const LeagueSelectModal = ({
+  modal,
+  onClose,
+  onSelect,
+}: {
+  modal: { options: Array<{ id: string; label: string; meta?: string }> } | null;
+  onClose: () => void;
+  onSelect: (id: string) => void;
+}) => (
+  <Modal visible={!!modal} transparent animationType="fade" onRequestClose={onClose}>
+    <View style={styles.modalOverlay}>
+      <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+      <View style={styles.modalCard}>
+        <Text style={styles.modalTitle}>Select League</Text>
+        <ScrollView style={{ maxHeight: 320 }}>
+          {modal?.options.map((option) => (
+            <Pressable
+              key={option.id}
+              style={styles.optionRow}
+              onPress={() => onSelect(option.id)}
+            >
+              <Text style={styles.optionLabel}>{option.label}</Text>
+              {option.meta && <Text style={styles.optionMeta}>{option.meta}</Text>}
+            </Pressable>
+          ))}
+        </ScrollView>
+      </View>
+    </View>
+  </Modal>
+);
+
+const TeamNameSelectModal = ({
+  modal,
+  onClose,
+  onSelect,
+}: {
+  modal: { target: 'home' | 'away'; options: Array<{ id: string; label: string }> } | null;
+  onClose: () => void;
+  onSelect: (target: 'home' | 'away', value: string) => void;
+}) => (
+  <Modal visible={!!modal} transparent animationType="fade" onRequestClose={onClose}>
+    <View style={styles.modalOverlay}>
+      <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+      <View style={styles.modalCard}>
+        <Text style={styles.modalTitle}>Select Team Name</Text>
+        <ScrollView style={{ maxHeight: 320 }}>
+          {modal?.options.map((option) => (
+            <Pressable
+              key={option.id}
+              style={styles.optionRow}
+              onPress={() => modal && onSelect(modal.target, option.label)}
+            >
+              <Text style={styles.optionLabel}>{option.label}</Text>
+            </Pressable>
+          ))}
+          {!modal?.options.length && (
+            <Text style={styles.placeholder}>No saved teams for this league yet.</Text>
+          )}
+        </ScrollView>
+      </View>
+    </View>
+  </Modal>
+);
 
 const styles = StyleSheet.create({
   safe: {
@@ -486,6 +691,9 @@ const styles = StyleSheet.create({
   container: {
     padding: 24,
     gap: 20,
+  },
+  scrollContent: {
+    paddingBottom: 140,
   },
   progress: {
     flexDirection: 'row',
@@ -543,29 +751,6 @@ const styles = StyleSheet.create({
     color: '#CBD5F5',
     fontWeight: '600',
     marginTop: 8,
-  },
-  segment: {
-    flexDirection: 'row',
-    gap: 8,
-    backgroundColor: '#0B1223',
-    borderRadius: 12,
-    padding: 4,
-  },
-  segmentOption: {
-    flex: 1,
-    borderRadius: 10,
-    alignItems: 'center',
-    paddingVertical: 10,
-  },
-  segmentSelected: {
-    backgroundColor: '#1D4ED8',
-  },
-  segmentLabel: {
-    color: '#94A3B8',
-    fontWeight: '600',
-  },
-  segmentLabelActive: {
-    color: '#F8FAFC',
   },
   lineupCard: {
     backgroundColor: '#0B1223',
@@ -657,34 +842,6 @@ const styles = StyleSheet.create({
     color: '#02101F',
     fontWeight: '700',
   },
-  playerGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  playerChip: {
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: '#1F2937',
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    backgroundColor: '#0B1223',
-  },
-  playerChipActive: {
-    borderColor: '#34D399',
-    backgroundColor: '#062C1B',
-  },
-  playerChipWarning: {
-    borderColor: '#F97316',
-  },
-  playerChipLabel: {
-    color: '#E2E8F0',
-    fontWeight: '600',
-  },
-  playerChipMeta: {
-    color: '#94A3B8',
-    fontSize: 12,
-  },
   summaryGrid: {
     flexDirection: 'row',
     gap: 12,
@@ -704,9 +861,113 @@ const styles = StyleSheet.create({
   summaryRow: {
     color: '#94A3B8',
   },
-  footer: {
+  footerBar: {
     flexDirection: 'row',
     gap: 12,
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    borderTopWidth: 1,
+    borderTopColor: '#0B1220',
+    backgroundColor: '#020617',
+  },
+  select: {
+    gap: 6,
+  },
+  selectLabel: {
+    color: '#94A3B8',
+    fontWeight: '600',
+  },
+  selectHelper: {
+    color: '#64748B',
+    fontSize: 12,
+  },
+  selectControl: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#0B1223',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#1F2937',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+  selectValue: {
+    color: '#F8FAFC',
+    fontWeight: '700',
+  },
+  selectCaret: {
+    color: '#64748B',
+    fontSize: 14,
+  },
+  selectDisabled: {
+    opacity: 0.5,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  modalCard: {
+    backgroundColor: '#0F172A',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#1F2937',
+    padding: 16,
+    gap: 12,
+  },
+  modalTitle: {
+    color: '#F8FAFC',
+    fontWeight: '700',
+    fontSize: 16,
+  },
+  optionRow: {
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#111827',
+  },
+  optionLabel: {
+    color: '#E2E8F0',
+    fontWeight: '600',
+  },
+  optionMeta: {
+    color: '#94A3B8',
+    fontSize: 12,
+  },
+  suggestionList: {
+    marginTop: 12,
+    gap: 8,
+  },
+  suggestionLabel: {
+    color: '#94A3B8',
+    fontWeight: '600',
+  },
+  suggestionRow: {
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#1F2937',
+    backgroundColor: '#0B1223',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  suggestionName: {
+    color: '#F8FAFC',
+    fontWeight: '600',
+  },
+  suggestionMeta: {
+    color: '#94A3B8',
+    fontSize: 12,
+  },
+  suggestionAction: {
+    color: '#60A5FA',
+    fontWeight: '700',
+  },
+  optionDisabled: {
+    opacity: 0.5,
   },
   savedLeagueList: {
     gap: 8,

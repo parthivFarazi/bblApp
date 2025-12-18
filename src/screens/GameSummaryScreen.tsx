@@ -33,7 +33,14 @@ export const GameSummaryScreen = ({ navigation }: Props) => {
   }
 
   const teamIds = Object.keys(live.teamLabels);
-  const innings = Array.from({ length: live.plannedInnings }, (_, index) => index + 1);
+  const playedInnings = Math.max(
+    1,
+    live.inning,
+    ...Object.values(live.scoreboard).flatMap((entry) =>
+      Object.keys(entry.inningRuns).map((inning) => Number(inning)),
+    ),
+  );
+  const innings = Array.from({ length: playedInnings }, (_, index) => index + 1);
   const players = Object.values(live.lineups).flatMap((lineup) =>
     lineup.lineup.map((slot) => slot.identity),
   );
@@ -43,7 +50,7 @@ export const GameSummaryScreen = ({ navigation }: Props) => {
     leagueId: live.leagueId,
     homeTeamId: teamIds[1] ?? teamIds[0],
     awayTeamId: teamIds[0],
-    plannedInnings: live.plannedInnings,
+    plannedInnings: playedInnings,
     startTime: new Date().toISOString(),
     finalScore: {
       home: live.scoreboard[teamIds[1] ?? teamIds[0]].runs,
@@ -106,28 +113,40 @@ export const GameSummaryScreen = ({ navigation }: Props) => {
         </View>
 
         <Text style={styles.title}>Inning Breakdown</Text>
-        <View style={styles.table}>
-          <View style={styles.tableHeader}>
-            <Text style={[styles.tableCell, styles.cellLabel]}>Team</Text>
-            {innings.map((inning) => (
-              <Text key={inning} style={styles.tableCell}>
-                {inning}
-              </Text>
-            ))}
-            <Text style={styles.tableCell}>R</Text>
-          </View>
-          {teamIds.map((teamId) => (
-            <View key={teamId} style={styles.tableRow}>
-              <Text style={[styles.tableCell, styles.cellLabel]}>{live.teamLabels[teamId]}</Text>
+        <ScrollView
+          horizontal
+          style={styles.tableScroll}
+          contentContainerStyle={styles.tableContent}
+          showsHorizontalScrollIndicator={false}
+        >
+          <View style={styles.table}>
+            <View style={styles.tableHeader}>
+              <Text style={[styles.tableCell, styles.cellLabel]}>Team</Text>
               {innings.map((inning) => (
-                <Text key={inning} style={styles.tableCell}>
-                  {live.scoreboard[teamId].inningRuns[inning] ?? 0}
+                <Text key={inning} style={[styles.tableCell, styles.numericCell]}>
+                  {inning}
                 </Text>
               ))}
-              <Text style={styles.tableCell}>{live.scoreboard[teamId].runs}</Text>
+              <Text style={[styles.tableCell, styles.numericCell]}>R</Text>
             </View>
-          ))}
-        </View>
+            {teamIds.map((teamId, index) => (
+              <View
+                key={teamId}
+                style={[styles.tableRow, index % 2 === 0 && styles.rowAlt]}
+              >
+                <Text style={[styles.tableCell, styles.cellLabel]}>
+                  {live.teamLabels[teamId]}
+                </Text>
+                {innings.map((inning) => (
+                  <Text key={inning} style={[styles.tableCell, styles.numericCell]}>
+                    {live.scoreboard[teamId].inningRuns[inning] ?? 0}
+                  </Text>
+                ))}
+                <Text style={[styles.tableCell, styles.numericCell]}>{live.scoreboard[teamId].runs}</Text>
+              </View>
+            ))}
+          </View>
+        </ScrollView>
 
         <Text style={styles.title}>Player Highlights</Text>
         <View style={styles.card}>
@@ -136,11 +155,11 @@ export const GameSummaryScreen = ({ navigation }: Props) => {
               <View>
                 <Text style={styles.leaderName}>{leader.displayName}</Text>
                 <Text style={styles.leaderMeta}>
-                  {leader.stats.hits} H • AVG {leader.stats.battingAverage.toFixed(3)} • SLG{' '}
-                  {leader.stats.slugging.toFixed(3)}
+                  {leader.stats.hits} H • AVG {leader.stats.battingAverage.toFixed(3)} • RBI{' '}
+                  {leader.stats.rbi}
                 </Text>
               </View>
-              <Text style={styles.leaderRBI}>{leader.stats.rbi} RBI</Text>
+              <Text style={styles.leaderRBI}>{leader.stats.slugging.toFixed(3)} SLG</Text>
             </View>
           ))}
         </View>
@@ -201,25 +220,51 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: '#1F2937',
+    backgroundColor: '#0B1220',
   },
   tableHeader: {
     flexDirection: 'row',
-    backgroundColor: '#1E293B',
+    backgroundColor: '#111827',
+    borderBottomWidth: 1,
+    borderBottomColor: '#1F2937',
   },
   tableRow: {
     flexDirection: 'row',
     backgroundColor: '#0F172A',
+    borderTopWidth: 1,
+    borderTopColor: '#111827',
+  },
+  rowAlt: {
+    backgroundColor: '#0D1527',
   },
   tableCell: {
-    flex: 1,
-    padding: 12,
+    width: 60,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
     color: '#F8FAFC',
-    textAlign: 'center',
+    borderRightWidth: 1,
+    borderRightColor: '#1F2937',
+    fontVariant: ['tabular-nums'],
+    flexShrink: 0,
+    flexGrow: 0,
+  },
+  numericCell: {
+    textAlign: 'right',
+    paddingRight: 12,
+    paddingLeft: 8,
   },
   cellLabel: {
-    flex: 2,
+    width: 140,
     textAlign: 'left',
     fontWeight: '600',
+    paddingLeft: 14,
+    paddingRight: 8,
+  },
+  tableScroll: {
+    marginTop: 8,
+  },
+  tableContent: {
+    flexGrow: 1,
   },
   leaderRow: {
     flexDirection: 'row',

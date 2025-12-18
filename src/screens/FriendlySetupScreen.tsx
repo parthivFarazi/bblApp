@@ -1,6 +1,7 @@
 import { FC, useMemo, useRef, useState } from 'react';
 import {
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -20,7 +21,6 @@ import { PlayerIdentity } from '@/types';
 type Step = 'names' | 'teamA' | 'teamB' | 'confirm';
 type TeamKey = 'teamA' | 'teamB';
 
-const inningsOptions = [3, 5, 7, 9];
 const stepOrder: Step[] = ['names', 'teamA', 'teamB', 'confirm'];
 
 type Props = NativeStackScreenProps<LiveGameStackParamList, 'FriendlySetup'>;
@@ -30,21 +30,12 @@ export const FriendlySetupScreen: FC<Props> = ({ navigation }) => {
   const playerDirectory = usePlayerStore((state) => state.players);
   const addPlayer = usePlayerStore((state) => state.addPlayer);
   const [step, setStep] = useState<Step>('names');
-  const [teamAName, setTeamAName] = useState('Visitors');
-  const [teamBName, setTeamBName] = useState('Home Team');
-  const [innings, setInnings] = useState(5);
+  const [teamAName, setTeamAName] = useState('Starting Team');
+  const [teamBName, setTeamBName] = useState('Bottom Team');
   const allPlayers = useMemo(() => Object.values(playerDirectory), [playerDirectory]);
-  const { teamASeed, teamBSeed } = useMemo(() => {
-    const first = allPlayers.slice(0, 4);
-    const second = allPlayers.slice(4, 8);
-    return {
-      teamASeed: first,
-      teamBSeed: second.length ? second : first,
-    };
-  }, [allPlayers]);
   const [lineups, setLineups] = useState<{ teamA: PlayerIdentity[]; teamB: PlayerIdentity[] }>(() => ({
-    teamA: teamASeed,
-    teamB: teamBSeed,
+    teamA: [],
+    teamB: [],
   }));
   const [guestInputs, setGuestInputs] = useState<{ teamA: string; teamB: string }>({
     teamA: '',
@@ -59,10 +50,20 @@ export const FriendlySetupScreen: FC<Props> = ({ navigation }) => {
     first: '',
     last: '',
   });
+  const [selectModal, setSelectModal] = useState<{
+    teamKey: TeamKey;
+    options: Array<{ id: string; label: string; meta: string; disabled: boolean }>;
+  } | null>(null);
   const searchInputRefs = {
     teamA: useRef<TextInput>(null),
     teamB: useRef<TextInput>(null),
   };
+
+  const playerLookup = useMemo(() => {
+    const map = new Map<string, PlayerIdentity>();
+    [...allPlayers, ...guestPlayers].forEach((player) => map.set(player.id, player));
+    return map;
+  }, [allPlayers, guestPlayers]);
 
   const updateLineups = (updater: (prev: { teamA: PlayerIdentity[]; teamB: PlayerIdentity[] }) => {
     teamA: PlayerIdentity[];
@@ -130,7 +131,6 @@ export const FriendlySetupScreen: FC<Props> = ({ navigation }) => {
       type: 'friendly',
       teamAName,
       teamBName,
-      innings,
       playerPool: Array.from(combinedPoolMap.values()),
       teamAPlayers: lineups.teamA,
       teamBPlayers: lineups.teamB,
@@ -178,6 +178,26 @@ export const FriendlySetupScreen: FC<Props> = ({ navigation }) => {
     const filteredPlayers = directory.filter((player) =>
       player.displayName.toLowerCase().includes(search[teamKey].toLowerCase()),
     );
+
+    const openSelect = () => {
+      setSelectModal({
+        teamKey,
+        options: filteredPlayers.map((player) => {
+          const inThisTeam = lineups[teamKey].some((slot) => slot.id === player.id);
+          const inOtherTeam = lineups[otherKey].some((slot) => slot.id === player.id);
+          const metaParts = [player.brotherId ? 'Brother' : 'Guest'];
+          if (inOtherTeam) metaParts.push('on Opponent');
+          if (inThisTeam) metaParts.push('Already added');
+          return {
+            id: player.id,
+            label: player.displayName,
+            meta: metaParts.join(' • '),
+            disabled: inThisTeam,
+          };
+        }),
+      });
+    };
+
     return (
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>{title}</Text>
@@ -280,33 +300,44 @@ export const FriendlySetupScreen: FC<Props> = ({ navigation }) => {
             </Pressable>
           </View>
         )}
+
+        {!!filteredPlayers.length && (
+          <View style={styles.suggestionList}>
+            <Text style={styles.suggestionLabel}>Suggestions</Text>
+            {filteredPlayers.slice(0, 6).map((player) => {
+              const inThisTeam = lineups[teamKey].some((slot) => slot.id === player.id);
+              const inOtherTeam = lineups[otherKey].some((slot) => slot.id === player.id);
+              const metaParts = [player.brotherId ? 'Brother' : 'Guest'];
+              if (inOtherTeam) metaParts.push('on Opponent');
+              return (
+                <Pressable
+                  key={player.id}
+                  style={[styles.suggestionRow, inThisTeam && styles.optionDisabled]}
+                  disabled={inThisTeam}
+                  onPress={() => assignPlayer(teamKey, player)}
+                >
+                  <View>
+                    <Text style={styles.suggestionName}>{player.displayName}</Text>
+                    <Text style={styles.suggestionMeta}>{metaParts.join(' • ')}</Text>
+                  </View>
+                  <Text style={styles.suggestionAction}>{inThisTeam ? 'Added' : 'Add'}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        )}
+
         <Text style={styles.subheading}>Available Players</Text>
-        <View style={styles.playerGrid}>
-          {filteredPlayers.map((player) => {
-            const inThisTeam = lineups[teamKey].some((slot) => slot.id === player.id);
-            const inOtherTeam = lineups[otherKey].some((slot) => slot.id === player.id);
-            return (
-              <Pressable
-                key={player.id}
-                style={[
-                  styles.playerChip,
-                  inThisTeam && styles.playerChipActive,
-                  inOtherTeam && styles.playerChipWarning,
-                ]}
-                onPress={() => assignPlayer(teamKey, player)}
-              >
-                <Text style={styles.playerChipLabel}>{player.displayName}</Text>
-                <Text style={styles.playerChipMeta}>
-                  {player.brotherId ? 'Brother' : 'Guest'}
-                  {inOtherTeam ? ' • on Opponent' : ''}
-                </Text>
-              </Pressable>
-            );
-          })}
-          {!filteredPlayers.length && (
-            <Text style={styles.placeholder}>No players match that search.</Text>
-          )}
-        </View>
+        <SelectTrigger
+          label="Add player to lineup"
+          helper={
+            filteredPlayers.length
+              ? 'Search to narrow, then tap to choose'
+              : 'No players match that search'
+          }
+          disabled={!filteredPlayers.length}
+          onPress={openSelect}
+        />
       </View>
     );
   };
@@ -344,7 +375,7 @@ export const FriendlySetupScreen: FC<Props> = ({ navigation }) => {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Team Names</Text>
           <Text style={styles.sectionCopy}>
-            Label each squad and choose the number of innings you plan to play.
+            Label each squad and build your lineups. You can end the game whenever you're done.
           </Text>
           <TextInput
             style={styles.input}
@@ -360,22 +391,6 @@ export const FriendlySetupScreen: FC<Props> = ({ navigation }) => {
             placeholder="Home Team"
             placeholderTextColor="#475569"
           />
-          <Text style={styles.subheading}>Planned Innings</Text>
-          <View style={styles.segment}>
-            {inningsOptions.map((option) => (
-              <Pressable
-                key={option}
-                style={[styles.segmentOption, innings === option && styles.segmentSelected]}
-                onPress={() => setInnings(option)}
-              >
-                <Text
-                  style={[styles.segmentLabel, innings === option && styles.segmentLabelActive]}
-                >
-                  {option}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
         </View>
       );
     }
@@ -401,27 +416,32 @@ export const FriendlySetupScreen: FC<Props> = ({ navigation }) => {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 64 : 0}
       >
-        <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-        <View style={styles.progressRow}>
-          {stepOrder.map((item) => (
-            <View key={item} style={styles.progressItem}>
-              <View style={[styles.progressDot, step === item && styles.progressDotActive]} />
-              <Text style={[styles.progressLabel, step === item && styles.progressLabelActive]}>
-                {item === 'names'
-                  ? 'Team Names'
-                  : item === 'teamA'
-                    ? 'Team 1 Lineup'
-                    : item === 'teamB'
-                      ? 'Team 2 Lineup'
-                      : 'Confirm'}
-              </Text>
+        <View style={{ flex: 1 }}>
+          <ScrollView
+            contentContainerStyle={[styles.container, styles.scrollContent]}
+            keyboardShouldPersistTaps="handled"
+          >
+            <View style={styles.progressRow}>
+              {stepOrder.map((item) => (
+                <View key={item} style={styles.progressItem}>
+                  <View style={[styles.progressDot, step === item && styles.progressDotActive]} />
+                  <Text style={[styles.progressLabel, step === item && styles.progressLabelActive]}>
+                    {item === 'names'
+                      ? 'Team Names'
+                      : item === 'teamA'
+                        ? 'Team 1 Lineup'
+                        : item === 'teamB'
+                          ? 'Team 2 Lineup'
+                          : 'Confirm'}
+                  </Text>
+                </View>
+              ))}
             </View>
-          ))}
-        </View>
 
-        {renderCurrentStep()}
+            {renderCurrentStep()}
+          </ScrollView>
 
-          <View style={styles.controls}>
+          <View style={styles.controlsBar}>
             <Pressable style={styles.secondaryButton} onPress={goBack}>
               <Text style={styles.secondaryLabel}>
                 {currentIndex === 0 ? 'Back to Modes' : 'Back'}
@@ -435,7 +455,7 @@ export const FriendlySetupScreen: FC<Props> = ({ navigation }) => {
               <Text style={styles.primaryLabel}>{ctaLabel}</Text>
             </Pressable>
           </View>
-        </ScrollView>
+        </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -449,6 +469,9 @@ const styles = StyleSheet.create({
   container: {
     padding: 20,
     gap: 16,
+  },
+  scrollContent: {
+    paddingBottom: 140,
   },
   progressRow: {
     flexDirection: 'row',
@@ -552,27 +575,6 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: '600',
   },
-  segment: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  segmentOption: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 12,
-    backgroundColor: '#111827',
-    alignItems: 'center',
-  },
-  segmentSelected: {
-    backgroundColor: '#1D4ED8',
-  },
-  segmentLabel: {
-    color: '#94A3B8',
-    fontWeight: '600',
-  },
-  segmentLabelActive: {
-    color: '#F8FAFC',
-  },
   lineupCard: {
     backgroundColor: '#111827',
     borderRadius: 16,
@@ -646,6 +648,39 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: '600',
   },
+  select: {
+    gap: 6,
+  },
+  selectLabel: {
+    color: '#94A3B8',
+    fontWeight: '600',
+  },
+  selectHelper: {
+    color: '#64748B',
+    fontSize: 12,
+  },
+  selectControl: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#0F172A',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#1F2937',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+  selectValue: {
+    color: '#F8FAFC',
+    fontWeight: '700',
+  },
+  selectCaret: {
+    color: '#64748B',
+    fontSize: 14,
+  },
+  selectDisabled: {
+    opacity: 0.5,
+  },
   playerGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -674,6 +709,72 @@ const styles = StyleSheet.create({
     color: '#94A3B8',
     fontSize: 11,
   },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  modalCard: {
+    backgroundColor: '#0F172A',
+    borderRadius: 16,
+    padding: 16,
+    gap: 12,
+    borderWidth: 1,
+    borderColor: '#1F2937',
+  },
+  modalTitle: {
+    color: '#F8FAFC',
+    fontWeight: '700',
+    fontSize: 16,
+  },
+  optionRow: {
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#111827',
+  },
+  optionLabel: {
+    color: '#E2E8F0',
+    fontWeight: '600',
+  },
+  optionMeta: {
+    color: '#94A3B8',
+    fontSize: 12,
+  },
+  optionDisabled: {
+    opacity: 0.5,
+  },
+  suggestionList: {
+    marginTop: 12,
+    gap: 8,
+  },
+  suggestionLabel: {
+    color: '#94A3B8',
+    fontWeight: '600',
+  },
+  suggestionRow: {
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#1F2937',
+    backgroundColor: '#0B1223',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  suggestionName: {
+    color: '#F8FAFC',
+    fontWeight: '600',
+  },
+  suggestionMeta: {
+    color: '#94A3B8',
+    fontSize: 12,
+  },
+  suggestionAction: {
+    color: '#60A5FA',
+    fontWeight: '700',
+  },
   summaryGrid: {
     flexDirection: 'row',
     gap: 12,
@@ -696,10 +797,15 @@ const styles = StyleSheet.create({
   summaryRow: {
     color: '#E2E8F0',
   },
-  controls: {
+  controlsBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     gap: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderTopWidth: 1,
+    borderTopColor: '#0B1220',
+    backgroundColor: '#020617',
   },
   secondaryButton: {
     flex: 1,
@@ -728,3 +834,63 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 });
+
+type SelectTriggerProps = {
+  label: string;
+  helper?: string;
+  disabled?: boolean;
+  onPress: () => void;
+};
+
+const SelectTrigger = ({ label, helper, disabled, onPress }: SelectTriggerProps) => (
+  <View style={styles.select}>
+    <Text style={styles.selectLabel}>{label}</Text>
+    <Pressable
+      style={[styles.selectControl, disabled && styles.selectDisabled]}
+      onPress={onPress}
+      disabled={disabled}
+    >
+      <Text style={styles.selectValue}>{disabled ? 'No players found' : 'Choose player'}</Text>
+      <Text style={styles.selectCaret}>▾</Text>
+    </Pressable>
+    {helper && <Text style={styles.selectHelper}>{helper}</Text>}
+  </View>
+);
+
+const PlayerSelectModal = ({
+  select,
+  onClose,
+  onSelect,
+}: {
+  select: {
+    teamKey: TeamKey;
+    options: Array<{ id: string; label: string; meta: string; disabled: boolean }>;
+  } | null;
+  onClose: () => void;
+  onSelect: (teamKey: TeamKey, playerId: string) => void;
+}) => (
+  <Modal visible={!!select} transparent animationType="fade" onRequestClose={onClose}>
+    <View style={styles.modalOverlay}>
+      <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+      <View style={styles.modalCard}>
+        <Text style={styles.modalTitle}>Choose Player</Text>
+        <ScrollView style={{ maxHeight: 320 }}>
+          {!select?.options.length && (
+            <Text style={styles.placeholder}>No players match that search.</Text>
+          )}
+          {select?.options.map((option) => (
+            <Pressable
+              key={option.id}
+              style={[styles.optionRow, option.disabled && styles.optionDisabled]}
+              disabled={option.disabled}
+              onPress={() => select && onSelect(select.teamKey, option.id)}
+            >
+              <Text style={styles.optionLabel}>{option.label}</Text>
+              <Text style={styles.optionMeta}>{option.meta}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+      </View>
+    </View>
+  </Modal>
+);

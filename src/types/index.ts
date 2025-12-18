@@ -228,7 +228,6 @@ export interface FriendlyGameSetupPayload {
   type: 'friendly';
   teamAName: string;
   teamBName: string;
-  innings: number;
   playerPool: PlayerIdentity[];
   teamAPlayers: PlayerIdentity[];
   teamBPlayers: PlayerIdentity[];
@@ -241,7 +240,6 @@ export interface LeagueGameSetupPayload {
   awayTeamId: string;
   homeTeamName: string;
   awayTeamName: string;
-  innings: number;
   leagueTeamMembers: LeagueTeamMember[];
 }
 

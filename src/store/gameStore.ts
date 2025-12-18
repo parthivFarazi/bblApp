@@ -71,7 +71,6 @@ const initialLiveState = (
   teamBId: string,
   teamLabels: Record<string, string>,
   lineups: Record<string, ReturnType<typeof toLineupState>>,
-  innings: number,
   teamOrder: string[],
   leagueId?: string,
 ): LiveGameState => ({
@@ -89,7 +88,7 @@ const initialLiveState = (
   bases: { ...EMPTY_BASES },
   scoreboard: createScoreboardState([teamAId, teamBId]),
   lineups,
-  plannedInnings: innings,
+  plannedInnings: 1,
   isComplete: false,
 });
 
@@ -101,6 +100,7 @@ const rotateSides = (live: LiveGameState): LiveGameState => {
     ...live,
     half: nextHalf,
     inning: nextInning,
+    plannedInnings: Math.max(live.plannedInnings, nextInning),
     outs: 0,
     strikes: 0,
     bases: { ...EMPTY_BASES },
@@ -160,7 +160,6 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
           teamBId,
           { [teamAId]: friendlyPayload.teamAName, [teamBId]: friendlyPayload.teamBName },
           { [teamAId]: lineupA, [teamBId]: lineupB },
-          friendlyPayload.innings,
           [teamAId, teamBId],
           undefined,
         ),
@@ -199,8 +198,8 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         mode: 'live',
         live: initialLiveState(
           'league',
-          payload.awayTeamId,
           payload.homeTeamId,
+          payload.awayTeamId,
           {
             [payload.homeTeamId]: payload.homeTeamName,
             [payload.awayTeamId]: payload.awayTeamName,
@@ -209,8 +208,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
             [payload.homeTeamId]: lineupHome,
             [payload.awayTeamId]: lineupAway,
           },
-          payload.innings,
-          [payload.awayTeamId, payload.homeTeamId],
+          [payload.homeTeamId, payload.awayTeamId],
           payload.leagueId,
         ),
         events: [],
