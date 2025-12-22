@@ -10,7 +10,18 @@ This project translates the Delta Upsilon Pong Baseball League (DUBBL) product b
 - **Supabase schema + client** stubs aligned with the documented tables to speed up backend wiring.
 - **Utility layer** for baseball-specific logic (base advancement, steals) and stats aggregation used by both live game summaries and historical leaderboards.
 
-## Getting started
+## Install on your device (Expo Go)
+
+1) Install Expo Go from the App Store/Play Store.
+2) Open this link in Expo Go (or scan the QR from the Expo update page):
+   - https://expo.dev/accounts/parthivfarazi/projects/pong-baseball-league/updates/5ce55842-5341-4613-b0a2-080a9f0917bb
+3) The app loads over the air; no App Store/TestFlight required. Supabase is already wired.
+
+Future updates will be delivered automatically over the same link.
+
+## Local development
+
+Clone the repo, then:
 
 ```bash
 cd DUBBLApp
@@ -22,11 +33,11 @@ The project expects the Expo CLI (bundled via `create-expo-app`). All dependenci
 
 ### Environment variables
 
-Create an `.env` or inject Expo public vars for Supabase before wiring to a real backend:
+Create an `.env` or export these before running:
 
 ```
-EXPO_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-EXPO_PUBLIC_SUPABASE_ANON_KEY=public-anon-key
+EXPO_PUBLIC_SUPABASE_URL=https://jjlkqilpjdjslxunmbup.supabase.co
+EXPO_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqbGtxaWxwamRqc2x4dW5tYnVwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMxMjczODAsImV4cCI6MjA3ODcwMzM4MH0.L6LpGdJxa9cNjHSTxZuoRDZcpa7Ir07wsAfTMo3835I
 ```
 
 `src/services/supabase.ts` will warn (and return `null`) until both values are set.

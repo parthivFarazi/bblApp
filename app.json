@@ -1,7 +1,8 @@
 {
   "expo": {
-    "name": "DUBBLApp",
-    "slug": "DUBBLApp",
+    "name": "Pong Baseball League",
+    "slug": "pong-baseball-league",
+    "owner": "parthivfarazi",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -25,6 +26,17 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "6a0d6373-74a7-4a92-8a5e-af7133e17e04"
+      }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/6a0d6373-74a7-4a92-8a5e-af7133e17e04"
     }
   }
 }
