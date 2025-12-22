@@ -77,12 +77,12 @@ export const useStatsStore = create<StatsState>((set) => ({
       };
     }),
   hydrate: ({ games, events, playerDirectory, teamLabels }) =>
-    set(() => ({
+    set((state) => ({
       recordedGames: games,
       recordedEvents: events,
       playerDirectory,
       teamLabels,
-      recordedDetails: {},
+      recordedDetails: state.recordedDetails,
     })),
   clear: () =>
     set({

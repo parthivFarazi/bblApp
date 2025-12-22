@@ -93,7 +93,7 @@ export const GameHistoryDetailScreen = ({ route, navigation }: Props) => {
       recordedAt: sampleGame.startTime,
       teamOrder: [sampleGame.awayTeamId, sampleGame.homeTeamId],
     };
-  }, [gameId, source, recordedDetails]);
+  }, [gameId, source, recordedDetails, recordedGames, recordedEvents, recordedPlayers, recordedTeamLabels]);
 
   if (!detail) {
     return (
