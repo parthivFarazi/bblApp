@@ -14,7 +14,7 @@ export const WelcomeScreen: FC<Props> = ({ navigation }) => {
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.container}>
-        <Text style={styles.tagline}>Delta Upsilon Beer Baseball League</Text>
+        <Text style={styles.tagline}>Delta Upsilon Pong Baseball League</Text>
         <Text style={styles.title}>Score Every Pitch</Text>
         <Text style={styles.subtitle}>
           Guests can hop directly into a live game, while DU brothers can unlock the Stats Center

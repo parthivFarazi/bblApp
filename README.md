@@ -1,6 +1,6 @@
 # DUBBL Mobile App (Expo)
 
-This project translates the Delta Upsilon Beer Baseball League (DUBBL) product brief into an Expo + React Native implementation focused on live gameplay tracking, stat aggregation, and Supabase-ready data modeling.
+This project translates the Delta Upsilon Pong Baseball League (DUBBL) product brief into an Expo + React Native implementation focused on live gameplay tracking, stat aggregation, and Supabase-ready data modeling.
 
 ## What's included
 
