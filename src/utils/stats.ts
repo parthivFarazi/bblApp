@@ -20,6 +20,7 @@ type Totals = {
   stealsWon: number;
   stealsLost: number;
   basesDefended: number;
+  basesDefendedSuccessful: number;
   basesStolen: number;
   hits: number;
   totalBases: number;
@@ -39,6 +40,7 @@ const zeroTotals = (): Totals => ({
   stealsWon: 0,
   stealsLost: 0,
   basesDefended: 0,
+  basesDefendedSuccessful: 0,
   basesStolen: 0,
   hits: 0,
   totalBases: 0,
@@ -122,8 +124,37 @@ export const buildIndividualLeaderboard = ({
   sortBy = 'slugging',
 }: IndividualLeaderboardConfig): IndividualStatsRow[] => {
   const scopedEvents = filterEventsByScope(events, games, scope, { year, leagueId });
+  const playerDirectory = new Map(players.map((p) => [p.id, p]));
+  const guestIds = new Set(players.filter((p) => p.isGuest).map((p) => p.id));
   const totals: Record<string, Totals> = {};
   const gameParticipation = new Map<string, Set<string>>();
+  const metaByKey = new Map<
+    string,
+    {
+      displayName: string;
+      brotherId?: string;
+      teamId?: string;
+    }
+  >();
+
+  const resolveKey = (playerId?: string | null) => {
+    if (!playerId) return null;
+    const player = playerDirectory.get(playerId);
+    if (player?.isGuest) return null;
+    const displayName = player?.displayName ?? 'Unknown Player';
+    const baseKey =
+      player?.brotherId && player.brotherId.trim().length
+        ? player.brotherId
+        : displayName.toLowerCase();
+    if (!metaByKey.has(baseKey)) {
+      metaByKey.set(baseKey, {
+        displayName,
+        brotherId: player?.brotherId,
+        teamId: player?.teamId,
+      });
+    }
+    return baseKey;
+  };
 
   const markGameParticipation = (playerId: string, gameId: string) => {
     if (!gameParticipation.has(playerId)) {
@@ -133,8 +164,10 @@ export const buildIndividualLeaderboard = ({
   };
 
   scopedEvents.forEach((event) => {
-    const batterTotals = ensurePlayerTotals(totals, event.batterId);
-    markGameParticipation(event.batterId, event.gameId);
+    const batterKey = resolveKey(event.batterId);
+    if (!batterKey) return;
+    const batterTotals = ensurePlayerTotals(totals, batterKey);
+    markGameParticipation(batterKey, event.gameId);
 
     switch (event.eventType) {
       case 'single':
@@ -161,17 +194,19 @@ export const buildIndividualLeaderboard = ({
         batterTotals.atBats += 1;
         break;
       case 'error': {
-        if (event.defenderId) {
-          const defenderTotals = ensurePlayerTotals(totals, event.defenderId);
+        const defenderKey = resolveKey(event.defenderId);
+        if (defenderKey) {
+          const defenderTotals = ensurePlayerTotals(totals, defenderKey);
           defenderTotals.errors += 1;
         }
         break;
       }
       case 'steal_success':
       case 'steal_fail': {
-        if (event.runnerId) {
-          const runnerTotals = ensurePlayerTotals(totals, event.runnerId);
-          markGameParticipation(event.runnerId, event.gameId);
+        const runnerKey = resolveKey(event.runnerId);
+        if (runnerKey) {
+          const runnerTotals = ensurePlayerTotals(totals, runnerKey);
+          markGameParticipation(runnerKey, event.gameId);
           runnerTotals.stealsAttempted += 1;
           if (event.eventType === 'steal_success') {
             runnerTotals.stealsWon += 1;
@@ -181,10 +216,14 @@ export const buildIndividualLeaderboard = ({
             runnerTotals.stealsLost += 1;
           }
         }
-        if (event.defenderId) {
-          const defenderTotals = ensurePlayerTotals(totals, event.defenderId);
-          markGameParticipation(event.defenderId, event.gameId);
+        const defenderKey = resolveKey(event.defenderId);
+        if (defenderKey) {
+          const defenderTotals = ensurePlayerTotals(totals, defenderKey);
+          markGameParticipation(defenderKey, event.gameId);
           defenderTotals.basesDefended += 1;
+          if (event.eventType === 'steal_fail') {
+            defenderTotals.basesDefendedSuccessful += 1;
+          }
         }
         break;
       }
@@ -192,25 +231,25 @@ export const buildIndividualLeaderboard = ({
         break;
     }
 
-    if (event.eventType === 'caught_out' && event.defenderId) {
-      const defenderTotals = ensurePlayerTotals(totals, event.defenderId);
+    if (event.eventType === 'caught_out') {
+      const defenderKey = resolveKey(event.defenderId);
+      if (!defenderKey) return;
+      const defenderTotals = ensurePlayerTotals(totals, defenderKey);
       defenderTotals.catches += 1;
     }
   });
 
-  const playerLookup = new Map(players.map((player) => [player.id, player]));
-
-  const rows: IndividualStatsRow[] = Object.entries(totals).map(([playerId, statTotals]) => {
+  const rows: IndividualStatsRow[] = Object.entries(totals).map(([playerKey, statTotals]) => {
     const hits = statTotals.hits;
     const atBats = statTotals.atBats || 1;
-    const display = playerLookup.get(playerId);
+    const meta = metaByKey.get(playerKey);
     return {
-      playerId,
-      displayName: display?.displayName ?? 'Unknown Player',
-      brotherId: display?.brotherId,
-      teamId: display?.teamId,
+      playerId: playerKey,
+      displayName: meta?.displayName ?? 'Unknown Player',
+      brotherId: meta?.brotherId,
+      teamId: meta?.teamId,
       stats: {
-        gamesPlayed: gameParticipation.get(playerId)?.size ?? 0,
+        gamesPlayed: gameParticipation.get(playerKey)?.size ?? 0,
         atBats: statTotals.atBats,
         hits,
         singles: statTotals.singles,
@@ -226,6 +265,7 @@ export const buildIndividualLeaderboard = ({
         stealsWon: statTotals.stealsWon,
         stealsLost: statTotals.stealsLost,
         basesDefended: statTotals.basesDefended,
+        basesDefendedSuccessful: statTotals.basesDefendedSuccessful,
         basesStolen: statTotals.basesStolen,
         rbi: statTotals.rbi,
       },
@@ -279,14 +319,15 @@ export const buildTeamLeaderboard = ({
       strikeouts: 0,
       battingAverage: 0,
       slugging: 0,
-      catches: 0,
-      errors: 0,
-      stealsAttempted: 0,
-      stealsWon: 0,
-      stealsLost: 0,
-      basesDefended: 0,
-      basesStolen: 0,
-    };
+    catches: 0,
+    errors: 0,
+    stealsAttempted: 0,
+    stealsWon: 0,
+    stealsLost: 0,
+    basesDefended: 0,
+    basesDefendedSuccessful: 0,
+    basesStolen: 0,
+  };
 
     const teamGames = games.filter((game) => {
       const isParticipant = game.homeTeamId === teamId || game.awayTeamId === teamId;
@@ -336,6 +377,7 @@ export const buildTeamLeaderboard = ({
       stats.stealsWon += details.stealsWon;
       stats.stealsLost += details.stealsLost;
       stats.basesDefended += details.basesDefended;
+      stats.basesDefendedSuccessful += details.basesDefendedSuccessful ?? 0;
       stats.basesStolen += details.basesStolen;
     });
 

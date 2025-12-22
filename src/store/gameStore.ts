@@ -62,8 +62,14 @@ const toLineupState = (teamId: string, players: PlayerIdentity[]) => ({
   currentIndex: 0,
 });
 
-const friendlyTeamId = (label: string) =>
-  `${label.toLowerCase().replace(/\s+/g, '-')}-${nanoid(4)}`;
+const friendlyTeamId = (_label: string) => createUuid();
+
+const createUuid = () =>
+  'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
 
 const initialLiveState = (
   type: GameMode,
@@ -74,7 +80,7 @@ const initialLiveState = (
   teamOrder: string[],
   leagueId?: string,
 ): LiveGameState => ({
-  gameId: nanoid(),
+  gameId: createUuid(),
   type,
   teamLabels,
   teamOrder,

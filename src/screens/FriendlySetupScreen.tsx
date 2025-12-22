@@ -1,4 +1,4 @@
-import { FC, useMemo, useRef, useState } from 'react';
+import { FC, useEffect, useMemo, useRef, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Modal,
@@ -17,6 +17,7 @@ import { LiveGameStackParamList } from '@/navigation/LiveGameNavigator';
 import { useGameStore } from '@/store/gameStore';
 import { usePlayerStore } from '@/store/playerStore';
 import { PlayerIdentity } from '@/types';
+import { createBrother, fetchBrothers } from '@/services/backend';
 
 type Step = 'names' | 'teamA' | 'teamB' | 'confirm';
 type TeamKey = 'teamA' | 'teamB';
@@ -29,6 +30,7 @@ export const FriendlySetupScreen: FC<Props> = ({ navigation }) => {
   const startGame = useGameStore((state) => state.startGame);
   const playerDirectory = usePlayerStore((state) => state.players);
   const addPlayer = usePlayerStore((state) => state.addPlayer);
+  const upsertPlayers = usePlayerStore((state) => state.upsertPlayers);
   const [step, setStep] = useState<Step>('names');
   const [teamAName, setTeamAName] = useState('Starting Team');
   const [teamBName, setTeamBName] = useState('Bottom Team');
@@ -64,6 +66,25 @@ export const FriendlySetupScreen: FC<Props> = ({ navigation }) => {
     [...allPlayers, ...guestPlayers].forEach((player) => map.set(player.id, player));
     return map;
   }, [allPlayers, guestPlayers]);
+
+  useEffect(() => {
+    const loadBrothers = async () => {
+      try {
+        const rows = await fetchBrothers();
+        const identities: PlayerIdentity[] = rows.map((row) => ({
+          id: row.id,
+          brotherId: row.id,
+          displayName: row.display_name ?? `${row.first_name ?? ''} ${row.last_name ?? ''}`.trim(),
+        }));
+        if (identities.length) {
+          upsertPlayers(identities);
+        }
+      } catch (error) {
+        console.error('Failed to load brothers', error);
+      }
+    };
+    loadBrothers();
+  }, [upsertPlayers]);
 
   const updateLineups = (updater: (prev: { teamA: PlayerIdentity[]; teamB: PlayerIdentity[] }) => {
     teamA: PlayerIdentity[];
@@ -281,19 +302,24 @@ export const FriendlySetupScreen: FC<Props> = ({ navigation }) => {
                 (!newBrother.first.trim() || !newBrother.last.trim()) && styles.primaryButtonDisabled,
               ]}
               disabled={!newBrother.first.trim() || !newBrother.last.trim()}
-              onPress={() => {
+              onPress={async () => {
                 const first = newBrother.first.trim();
                 const last = newBrother.last.trim();
                 if (!first || !last) return;
-                const id = `bro-${first.toLowerCase()}-${last.toLowerCase()}-${Date.now()}`;
-                const identity: PlayerIdentity = {
-                  id,
-                  brotherId: id,
-                  displayName: `${first} ${last}`,
-                };
-                addPlayer(identity);
-                setNewBrother({ first: '', last: '' });
-                assignPlayer(teamKey, identity);
+                try {
+                  const created = await createBrother(first, last);
+                  const identity: PlayerIdentity = {
+                    id: created.id,
+                    brotherId: created.id,
+                    displayName: created.display_name ?? `${first} ${last}`,
+                  };
+                  addPlayer(identity);
+                  assignPlayer(teamKey, identity);
+                } catch (error) {
+                  console.error('Failed to add brother', error);
+                } finally {
+                  setNewBrother({ first: '', last: '' });
+                }
               }}
             >
               <Text style={styles.addBrotherButtonLabel}>Add Brother Profile</Text>

@@ -11,12 +11,14 @@ export type LeaguePreset = {
 type LeagueStoreState = {
   leagues: LeaguePreset[];
   addLeague: (league: LeaguePreset) => void;
+  setLeagues: (leagues: LeaguePreset[]) => void;
 };
 
 export const useLeagueStore = create<LeagueStoreState>()(
   persist(
     (set, get) => ({
       leagues: [],
+      setLeagues: (leagues) => set(() => ({ leagues })),
       addLeague: (league) => {
         const existing = get().leagues.find((item) => item.id === league.id);
         if (existing) {

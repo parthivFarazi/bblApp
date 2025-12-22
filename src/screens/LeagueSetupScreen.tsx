@@ -1,4 +1,4 @@
-import { FC, useMemo, useRef, useState } from 'react';
+import { FC, useEffect, useMemo, useRef, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Modal,
@@ -19,13 +19,12 @@ import { usePlayerStore } from '@/store/playerStore';
 import { useLeagueStore } from '@/store/leagueStore';
 import { useTeamStore } from '@/store/teamStore';
 import { PlayerIdentity } from '@/types';
+import { createBrother, createLeague, fetchBrothers, fetchLeagues, fetchTeamsForLeague, upsertTeam } from '@/services/backend';
 
 type Step = 'names' | 'teamA' | 'teamB' | 'confirm';
 type TeamKey = 'teamA' | 'teamB';
 
 const stepOrder: Step[] = ['names', 'teamA', 'teamB', 'confirm'];
-
-const slugify = (value: string) => value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-');
 
 const toLeagueMembers = (teamId: string, players: PlayerIdentity[]) =>
   players.map((player, index) => ({
@@ -43,10 +42,13 @@ export const LeagueSetupScreen: FC<Props> = ({ navigation }) => {
   const startGame = useGameStore((state) => state.startGame);
   const playerDirectory = usePlayerStore((state) => state.players);
   const addPlayer = usePlayerStore((state) => state.addPlayer);
+  const upsertPlayers = usePlayerStore((state) => state.upsertPlayers);
   const savedLeagues = useLeagueStore((state) => state.leagues);
   const addLeaguePreset = useLeagueStore((state) => state.addLeague);
+  const setLeaguePresets = useLeagueStore((state) => state.setLeagues);
   const teams = useTeamStore((state) => state.teams);
-  const ensureTeamProfile = useTeamStore((state) => state.ensureTeam);
+  const setTeams = useTeamStore((state) => state.setTeams);
+  const upsertTeamProfile = useTeamStore((state) => state.upsertTeam);
   const [step, setStep] = useState<Step>('names');
   const [teamAName, setTeamAName] = useState('Home Team');
   const [teamBName, setTeamBName] = useState('Away Team');
@@ -74,6 +76,8 @@ export const LeagueSetupScreen: FC<Props> = ({ navigation }) => {
     teamKey: TeamKey;
     options: Array<{ id: string; label: string; meta: string; disabled: boolean }>;
   } | null>(null);
+  const [savingLeague, setSavingLeague] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const searchInputRefs = {
     teamA: useRef<TextInput>(null),
     teamB: useRef<TextInput>(null),
@@ -103,6 +107,32 @@ export const LeagueSetupScreen: FC<Props> = ({ navigation }) => {
     return map;
   }, [savedLeagues]);
 
+  useEffect(() => {
+    const loadInitial = async () => {
+      try {
+        const [leagueRows, brotherRows] = await Promise.all([fetchLeagues(), fetchBrothers()]);
+        setLeaguePresets(
+          leagueRows.map((row) => ({
+            id: row.id,
+            name: row.name,
+            year: row.year,
+          })),
+        );
+        const identities: PlayerIdentity[] = brotherRows.map((row) => ({
+          id: row.id,
+          brotherId: row.id,
+          displayName: row.display_name ?? `${row.first_name ?? ''} ${row.last_name ?? ''}`.trim(),
+        }));
+        if (identities.length) {
+          upsertPlayers(identities);
+        }
+      } catch (error) {
+        console.error('Failed to load Supabase data', error);
+      }
+    };
+    loadInitial();
+  }, [setLeaguePresets, upsertPlayers]);
+
   const handleLeagueSelect = (choiceId: string) => {
     setSelectedLeagueId(choiceId);
     if (choiceId !== 'new') {
@@ -114,6 +144,26 @@ export const LeagueSetupScreen: FC<Props> = ({ navigation }) => {
     }
     setLeagueSelect(null);
   };
+
+  useEffect(() => {
+    if (!selectedLeagueId || selectedLeagueId === 'new') return;
+    const loadTeams = async () => {
+      try {
+        const rows = await fetchTeamsForLeague(selectedLeagueId);
+        const mapped = rows.reduce<Record<string, { id: string; name: string; leagueId?: string }>>(
+          (acc, row) => {
+            acc[row.id] = { id: row.id, name: row.name, leagueId: row.league_id ?? undefined };
+            return acc;
+          },
+          {},
+        );
+        setTeams(mapped);
+      } catch (error) {
+        console.error('Failed to load teams', error);
+      }
+    };
+    loadTeams();
+  }, [selectedLeagueId, setTeams]);
 
   const leagueTeamOptions = useMemo(() => {
     if (!selectedLeagueId || selectedLeagueId === 'new') return [];
@@ -285,19 +335,24 @@ export const LeagueSetupScreen: FC<Props> = ({ navigation }) => {
                 (!newBrother.first.trim() || !newBrother.last.trim()) && styles.primaryButtonDisabled,
               ]}
               disabled={!newBrother.first.trim() || !newBrother.last.trim()}
-              onPress={() => {
+              onPress={async () => {
                 const first = newBrother.first.trim();
                 const last = newBrother.last.trim();
                 if (!first || !last) return;
-                const id = `bro-${first.toLowerCase()}-${last.toLowerCase()}-${Date.now()}`;
-                const identity: PlayerIdentity = {
-                  id,
-                  brotherId: id,
-                  displayName: `${first} ${last}`,
-                };
-                addPlayer(identity);
-                setNewBrother({ first: '', last: '' });
-                assignPlayer(teamKey, identity);
+                try {
+                  const created = await createBrother(first, last);
+                  const identity: PlayerIdentity = {
+                    id: created.id,
+                    brotherId: created.id,
+                    displayName: created.display_name ?? `${first} ${last}`,
+                  };
+                  addPlayer(identity);
+                  assignPlayer(teamKey, identity);
+                } catch (error) {
+                  console.error('Failed to add brother', error);
+                } finally {
+                  setNewBrother({ first: '', last: '' });
+                }
               }}
             >
               <Text style={styles.addBrotherButtonLabel}>Add Brother Profile</Text>
@@ -422,16 +477,24 @@ export const LeagueSetupScreen: FC<Props> = ({ navigation }) => {
             keyboardType="number-pad"
           />
           <Pressable
-            style={styles.outlineButton}
-            onPress={() => {
+            style={[styles.outlineButton, savingLeague && styles.primaryButtonDisabled]}
+            disabled={savingLeague}
+            onPress={async () => {
               const cleanedName = leagueName.trim();
               if (!cleanedName) {
                 return;
               }
               const yearNumber = Number(leagueYear) || new Date().getFullYear();
-              const id = `${slugify(cleanedName)}-${yearNumber}`;
-              addLeaguePreset({ id, name: cleanedName, year: yearNumber });
-              setSelectedLeagueId(id);
+              setSavingLeague(true);
+              try {
+                const created = await createLeague(cleanedName, yearNumber);
+                addLeaguePreset({ id: created.id, name: created.name, year: created.year });
+                setSelectedLeagueId(created.id);
+              } catch (error) {
+                console.error('Failed to save league preset', error);
+              } finally {
+                setSavingLeague(false);
+              }
             }}
           >
             <Text style={styles.outlineButtonLabel}>Save League Preset</Text>
@@ -491,29 +554,53 @@ export const LeagueSetupScreen: FC<Props> = ({ navigation }) => {
     return renderConfirmStep();
   };
 
-  const handleStart = () => {
-    if (!lineups.teamA.length || !lineups.teamB.length) return;
-    const cleanedLeagueName = leagueName.trim();
-    const leagueId =
-      cleanedLeagueName.length > 0
-        ? `${slugify(cleanedLeagueName)}-${leagueYear || new Date().getFullYear()}`
-        : undefined;
-    const homeTeamId = ensureTeamProfile(teamAName, leagueId);
-    const awayTeamId = ensureTeamProfile(teamBName, leagueId);
-    const members = [
-      ...toLeagueMembers(homeTeamId, lineups.teamA),
-      ...toLeagueMembers(awayTeamId, lineups.teamB),
-    ];
-    startGame({
-      type: 'league',
-      leagueId,
-      homeTeamId,
-      awayTeamId,
-      homeTeamName: teamAName,
-      awayTeamName: teamBName,
-      leagueTeamMembers: members,
-    });
-    navigation.navigate('LiveGame');
+  const handleStart = async () => {
+    if (!lineups.teamA.length || !lineups.teamB.length || isSaving) return;
+    setIsSaving(true);
+    try {
+      const cleanedLeagueName = leagueName.trim();
+      let leagueId = selectedLeagueId !== 'new' ? selectedLeagueId : undefined;
+      if (!leagueId && cleanedLeagueName) {
+        const created = await createLeague(
+          cleanedLeagueName,
+          Number(leagueYear) || new Date().getFullYear(),
+        );
+        leagueId = created.id;
+        addLeaguePreset({ id: created.id, name: created.name, year: created.year });
+      }
+      const homeTeam = await upsertTeam(teamAName, leagueId);
+      const awayTeam = await upsertTeam(teamBName, leagueId);
+
+      upsertTeamProfile({
+        id: homeTeam.id,
+        name: homeTeam.name,
+        leagueId: homeTeam.league_id ?? undefined,
+      });
+      upsertTeamProfile({
+        id: awayTeam.id,
+        name: awayTeam.name,
+        leagueId: awayTeam.league_id ?? undefined,
+      });
+
+      const members = [
+        ...toLeagueMembers(homeTeam.id, lineups.teamA),
+        ...toLeagueMembers(awayTeam.id, lineups.teamB),
+      ];
+      startGame({
+        type: 'league',
+        leagueId,
+        homeTeamId: homeTeam.id,
+        awayTeamId: awayTeam.id,
+        homeTeamName: teamAName,
+        awayTeamName: teamBName,
+        leagueTeamMembers: members,
+      });
+      navigation.navigate('LiveGame');
+    } catch (error) {
+      console.error('Failed to start league game', error);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -556,9 +643,9 @@ export const LeagueSetupScreen: FC<Props> = ({ navigation }) => {
               <Pressable
                 style={[
                   styles.primaryButton,
-                  (!lineups.teamA.length || !lineups.teamB.length) && styles.primaryButtonDisabled,
+                  (!lineups.teamA.length || !lineups.teamB.length || isSaving) && styles.primaryButtonDisabled,
                 ]}
-                disabled={!lineups.teamA.length || !lineups.teamB.length}
+                disabled={!lineups.teamA.length || !lineups.teamB.length || isSaving}
                 onPress={handleStart}
               >
                 <Text style={styles.primaryButtonLabel}>Start League Game</Text>

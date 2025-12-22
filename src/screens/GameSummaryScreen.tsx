@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { ScrollView, StyleSheet, Text, View, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -9,6 +9,7 @@ import { useGameStore } from '@/store/gameStore';
 import { useStatsStore } from '@/store/statsStore';
 import { buildIndividualLeaderboard } from '@/utils/stats';
 import { Game } from '@/types';
+import { persistGameToSupabase } from '@/services/backend';
 
 type Props = NativeStackScreenProps<LiveGameStackParamList, 'Summary'>;
 
@@ -18,6 +19,7 @@ export const GameSummaryScreen = ({ navigation }: Props) => {
   const reset = useGameStore((state) => state.reset);
   const recordGame = useStatsStore((state) => state.recordGame);
   const recordedRef = useRef(false);
+  const remoteRecordedRef = useRef(false);
 
   if (!live) {
     return (
@@ -64,7 +66,7 @@ export const GameSummaryScreen = ({ navigation }: Props) => {
     scope: 'overall',
   }).slice(0, 4);
 
-  const persistGame = () => {
+  const persistGame = async () => {
     if (recordedRef.current) {
       return;
     }
@@ -79,7 +81,20 @@ export const GameSummaryScreen = ({ navigation }: Props) => {
       teamOrder: live.teamOrder,
     });
     recordedRef.current = true;
+    if (!remoteRecordedRef.current) {
+      try {
+        await persistGameToSupabase(live, events);
+        remoteRecordedRef.current = true;
+      } catch (error) {
+        console.error('Failed to sync game to Supabase', error);
+      }
+    }
   };
+
+  useEffect(() => {
+    persistGame();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleReset = () => {
     persistGame();

@@ -20,10 +20,50 @@ const teamLookup = leagueTeams.reduce<Record<string, string>>((acc, team) => {
 export const GameHistoryDetailScreen = ({ route, navigation }: Props) => {
   const { gameId, source } = route.params;
   const recordedDetails = useStatsStore((state) => state.recordedDetails);
+  const recordedGames = useStatsStore((state) => state.recordedGames);
+  const recordedEvents = useStatsStore((state) => state.recordedEvents);
+  const recordedPlayers = useStatsStore((state) => state.playerDirectory);
+  const recordedTeamLabels = useStatsStore((state) => state.teamLabels);
 
   const detail = useMemo(() => {
     if (source === 'recorded') {
-      return recordedDetails[gameId];
+      if (recordedDetails[gameId]) {
+        return recordedDetails[gameId];
+      }
+      const game = recordedGames.find((g) => g.id === gameId);
+      if (!game) return undefined;
+      const awayId = game.awayTeamId;
+      const homeId = game.homeTeamId;
+      const teamLabels = {
+        [awayId]: recordedTeamLabels[awayId] ?? 'Visitors',
+        [homeId]: recordedTeamLabels[homeId] ?? 'Home',
+      };
+      const scoreboard = {
+        [awayId]: {
+          runs: game.finalScore?.away ?? 0,
+          hits: 0,
+          errors: 0,
+          inningRuns: {},
+        },
+        [homeId]: {
+          runs: game.finalScore?.home ?? 0,
+          hits: 0,
+          errors: 0,
+          inningRuns: {},
+        },
+      };
+      const events = recordedEvents.filter((e) => e.gameId === gameId);
+      const players = Object.values(recordedPlayers);
+      return {
+        id: game.id,
+        game,
+        teamLabels,
+        scoreboard,
+        events,
+        players,
+        recordedAt: game.startTime,
+        teamOrder: [awayId, homeId],
+      };
     }
     const sampleGame = sampleGames.find((game) => game.id === gameId);
     if (!sampleGame) return undefined;

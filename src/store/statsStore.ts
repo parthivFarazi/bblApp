@@ -31,15 +31,21 @@ interface StatsState {
   teamLabels: Record<string, string>;
   recordedDetails: Record<string, RecordedGameDetail>;
   recordGame: (payload: RecordPayload) => void;
+  hydrate: (payload: {
+    games: Game[];
+    events: GameEvent[];
+    playerDirectory: Record<string, PlayerIdentity>;
+    teamLabels: Record<string, string>;
+  }) => void;
   clear: () => void;
 }
 
 export const useStatsStore = create<StatsState>((set) => ({
-  recordedGames: [],
-  recordedEvents: [],
-  playerDirectory: {},
-  teamLabels: {},
-  recordedDetails: {},
+    recordedGames: [],
+    recordedEvents: [],
+    playerDirectory: {},
+    teamLabels: {},
+    recordedDetails: {},
   recordGame: ({ game, events, players, teamLabels, scoreboard, recordedAt, teamOrder }) =>
     set((state) => {
       const brotherPlayers = players.filter((player) => !player.isGuest);
@@ -70,6 +76,14 @@ export const useStatsStore = create<StatsState>((set) => ({
         },
       };
     }),
+  hydrate: ({ games, events, playerDirectory, teamLabels }) =>
+    set(() => ({
+      recordedGames: games,
+      recordedEvents: events,
+      playerDirectory,
+      teamLabels,
+      recordedDetails: {},
+    })),
   clear: () =>
     set({
       recordedGames: [],

@@ -201,7 +201,10 @@ const Scoreboard = ({
   batterName?: string;
 }) => {
   if (!live) return null;
-  const entries = Object.entries(live.teamLabels);
+  const entries = (live.teamOrder.length
+    ? live.teamOrder
+    : Object.keys(live.teamLabels)
+  ).map((teamId) => [teamId, live.teamLabels[teamId]] as const);
   return (
     <View style={styles.card}>
       {entries.map(([teamId, label]) => (
@@ -215,6 +218,7 @@ const Scoreboard = ({
           <Text style={styles.scoreValue}>{live.scoreboard[teamId].runs}</Text>
         </View>
       ))}
+      <Text style={styles.scoreNote}>Home team shows on top (starts first); away team appears below.</Text>
       <View style={styles.batterRow}>
         <View>
           <Text style={styles.batterLabel}>At Bat</Text>
@@ -300,7 +304,7 @@ const DefenderPicker = ({
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: '#020617',
+    backgroundColor: '#050D1E',
   },
   container: {
     padding: 20,
@@ -316,8 +320,13 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   badge: {
-    color: '#60A5FA',
-    fontWeight: '600',
+    alignSelf: 'flex-start',
+    backgroundColor: '#0F52BA',
+    color: '#F2D680',
+    fontWeight: '700',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
   },
   heading: {
     color: '#F8FAFC',
@@ -330,16 +339,16 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   counterLabel: {
-    color: '#CBD5F5',
+    color: '#E0E7FF',
     fontSize: 12,
     marginBottom: 4,
     textTransform: 'uppercase',
   },
   counterBox: {
-    backgroundColor: '#0F172A',
+    backgroundColor: '#0B1834',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#1F2937',
+    borderColor: '#1D3F73',
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
@@ -351,18 +360,18 @@ const styles = StyleSheet.create({
     width: 12,
     height: 12,
     borderRadius: 6,
-    backgroundColor: '#1F2937',
+    backgroundColor: '#122548',
   },
   dotActive: {
-    backgroundColor: '#34D399',
+    backgroundColor: '#CFB53B',
   },
   card: {
-    backgroundColor: '#0F172A',
+    backgroundColor: '#0B1834',
     borderRadius: 16,
     padding: 16,
     gap: 12,
     borderWidth: 1,
-    borderColor: '#1F2937',
+    borderColor: '#1D3F73',
   },
   scoreRow: {
     flexDirection: 'row',
@@ -370,18 +379,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   scoreTeam: {
-    color: '#F8FAFC',
+    color: '#F2D680',
     fontSize: 16,
     fontWeight: '600',
   },
   scoreMeta: {
-    color: '#94A3B8',
+    color: '#B6C6E7',
     fontSize: 12,
   },
   scoreValue: {
     fontSize: 32,
     fontWeight: '700',
-    color: '#FDE047',
+    color: '#CFB53B',
+  },
+  scoreNote: {
+    color: '#F2D680',
+    fontSize: 12,
+    marginTop: 4,
   },
   batterRow: {
     marginTop: 8,
@@ -390,7 +404,7 @@ const styles = StyleSheet.create({
     paddingTop: 12,
   },
   batterLabel: {
-    color: '#94A3B8',
+    color: '#B6C6E7',
     fontSize: 12,
     textTransform: 'uppercase',
     letterSpacing: 1,
@@ -412,21 +426,21 @@ const styles = StyleSheet.create({
     width: 72,
     height: 72,
     borderRadius: 12,
-    backgroundColor: '#0F172A',
+    backgroundColor: '#0B1834',
     borderWidth: 1,
-    borderColor: '#1F2937',
+    borderColor: '#1D3F73',
     alignItems: 'center',
     justifyContent: 'center',
   },
   baseActive: {
-    borderColor: '#34D399',
+    borderColor: '#CFB53B',
   },
   baseLabel: {
     color: '#F8FAFC',
     fontWeight: '600',
   },
   baseOccupant: {
-    color: '#94A3B8',
+    color: '#E0E7FF',
     fontSize: 12,
     textAlign: 'center',
     marginTop: 4,
@@ -435,8 +449,9 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   sectionLabel: {
-    color: '#CBD5F5',
-    fontWeight: '600',
+    color: '#F2D680',
+    fontWeight: '700',
+    letterSpacing: 0.2,
   },
   grid: {
     flexDirection: 'row',
@@ -444,23 +459,30 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   action: {
-    flex: 1,
+    flexBasis: '48%',
+    minWidth: 148,
     paddingVertical: 16,
+    paddingHorizontal: 12,
     borderRadius: 16,
-    backgroundColor: '#1D4ED8',
+    backgroundColor: '#0F52BA',
     alignItems: 'center',
   },
   actionSecondary: {
-    flex: 1,
+    flexBasis: '48%',
+    minWidth: 148,
     paddingVertical: 16,
+    paddingHorizontal: 12,
     borderRadius: 16,
-    backgroundColor: '#1F2937',
+    backgroundColor: '#0B1834',
+    borderWidth: 1,
+    borderColor: '#1D3F73',
     alignItems: 'center',
   },
   actionLabel: {
     color: '#F8FAFC',
-    fontWeight: '600',
+    fontWeight: '700',
     fontSize: 14,
+    letterSpacing: 0.2,
   },
   disabled: {
     opacity: 0.4,
@@ -469,12 +491,12 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 16,
     borderRadius: 16,
-    backgroundColor: '#EF4444',
+    backgroundColor: '#CFB53B',
     alignItems: 'center',
   },
   completeLabel: {
-    color: '#fff',
-    fontWeight: '600',
+    color: '#0B1834',
+    fontWeight: '800',
   },
   emptyState: {
     flex: 1,
@@ -493,14 +515,14 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   cta: {
-    backgroundColor: '#2563EB',
+    backgroundColor: '#0F52BA',
     paddingHorizontal: 24,
     paddingVertical: 12,
     borderRadius: 999,
   },
   ctaLabel: {
-    color: '#fff',
-    fontWeight: '600',
+    color: '#F2D680',
+    fontWeight: '700',
   },
   modalBackdrop: {
     flex: 1,
@@ -509,25 +531,25 @@ const styles = StyleSheet.create({
     padding: 24,
   },
   modalCard: {
-    backgroundColor: '#0F172A',
+    backgroundColor: '#0B1834',
     borderRadius: 16,
     padding: 20,
     gap: 12,
     borderWidth: 1,
-    borderColor: '#1F2937',
+    borderColor: '#1D3F73',
   },
   modalTitle: {
-    color: '#F8FAFC',
+    color: '#F2D680',
     fontSize: 16,
     fontWeight: '600',
   },
   modalOption: {
     paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: '#1F2937',
+    borderBottomColor: '#1D3F73',
   },
   modalOptionLabel: {
-    color: '#E2E8F0',
+    color: '#F8FAFC',
     fontSize: 16,
   },
   modalClose: {
@@ -535,8 +557,8 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   modalCloseLabel: {
-    color: '#94A3B8',
-    fontWeight: '600',
+    color: '#B6C6E7',
+    fontWeight: '700',
   },
   placeholder: {
     color: '#64748B',

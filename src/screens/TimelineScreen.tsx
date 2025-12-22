@@ -1,4 +1,5 @@
 import { ScrollView, StyleSheet, Text, View, Pressable } from 'react-native';
+import { useEffect } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { format } from 'date-fns';
 import { useNavigation } from '@react-navigation/native';
@@ -8,6 +9,7 @@ import { leagueTeams, sampleGames } from '@/data/sampleData';
 import { useStatsStore } from '@/store/statsStore';
 import { GameMode } from '@/types';
 import { StatsStackParamList } from '@/navigation/StatsNavigator';
+import { fetchAllTeams, fetchGamesWithEvents } from '@/services/backend';
 
 const teamLookup = leagueTeams.reduce<Record<string, string>>((acc, team) => {
   acc[team.id] = team.name;
@@ -17,6 +19,84 @@ const teamLookup = leagueTeams.reduce<Record<string, string>>((acc, team) => {
 export const TimelineScreen = () => {
   const navigation = useNavigation<NativeStackNavigationProp<StatsStackParamList>>();
   const recordedDetails = useStatsStore((state) => state.recordedDetails);
+  const recordedGames = useStatsStore((state) => state.recordedGames);
+  const teamLabels = useStatsStore((state) => state.teamLabels);
+  const hydrateStats = useStatsStore((state) => state.hydrate);
+
+  useEffect(() => {
+    const loadRemote = async () => {
+      try {
+        const [{ games, events, gamePlayers }, teams] = await Promise.all([
+          fetchGamesWithEvents(),
+          fetchAllTeams(),
+        ]);
+
+        const playerDirectoryFromGames = gamePlayers.reduce<Record<string, any>>((acc, row) => {
+          const player = (row as any).players;
+          if (!player) return acc;
+          const displayName =
+            player.guest_name ||
+            player.brothers?.display_name ||
+            player.id;
+          acc[player.id] = {
+            id: player.id,
+            displayName,
+            brotherId: player.brother_id ?? undefined,
+            isGuest: player.is_guest ?? false,
+            teamId: row.team_id,
+          };
+          return acc;
+        }, {});
+
+        const teamLabelsRemote = teams.reduce<Record<string, string>>((acc, team) => {
+          acc[team.id] = team.name;
+          return acc;
+        }, {});
+
+        const mappedGames = games.map((game) => ({
+          id: game.id,
+          type: game.type,
+          leagueId: game.league_id ?? undefined,
+          homeTeamId: game.home_team_id,
+          awayTeamId: game.away_team_id,
+          plannedInnings: game.planned_innings ?? 1,
+          startTime: game.start_time,
+          completedAt: game.completed_at ?? undefined,
+          finalScore: {
+            home: game.final_score_home ?? 0,
+            away: game.final_score_away ?? 0,
+          },
+        })) as any;
+
+        const mappedEvents = events.map((event) => ({
+          id: event.id,
+          gameId: event.game_id,
+          eventType: event.event_type,
+          batterId: event.batter_id ?? undefined,
+          defenderId: event.defender_id ?? undefined,
+          runnerId: event.runner_id ?? undefined,
+          inning: event.inning,
+          half: event.half,
+          baseStateBefore: event.base_state_before,
+          baseStateAfter: event.base_state_after,
+          runsScored: event.runs_scored ?? 0,
+          rbi: event.rbi ?? 0,
+          timestamp: event.timestamp ?? Date.now(),
+          notes: event.notes ?? undefined,
+        })) as any;
+
+        hydrateStats({
+          games: mappedGames,
+          events: mappedEvents,
+          playerDirectory: playerDirectoryFromGames,
+          teamLabels: teamLabelsRemote,
+        });
+      } catch (error) {
+        console.error('Failed to load remote history', error);
+      }
+    };
+    loadRemote();
+  }, [hydrateStats]);
 
   const recordedEntries: TimelineEntry[] = Object.values(recordedDetails).map((detail) => {
     const awayId = detail.teamOrder[0];
@@ -33,6 +113,21 @@ export const TimelineScreen = () => {
     };
   });
 
+  const fallbackRecordedEntries: TimelineEntry[] = recordedGames.map((game) => {
+    const awayId = game.awayTeamId;
+    const homeId = game.homeTeamId;
+    return {
+      id: game.id,
+      source: 'recorded' as const,
+      type: game.type,
+      playedAt: game.startTime,
+      awayName: teamLabels[awayId] ?? 'Visitors',
+      homeName: teamLabels[homeId] ?? 'Home',
+      awayScore: game.finalScore?.away ?? 0,
+      homeScore: game.finalScore?.home ?? 0,
+    };
+  });
+
   const historicalEntries: TimelineEntry[] = sampleGames.map((game) => ({
     id: game.id,
     source: 'sample' as const,
@@ -44,7 +139,7 @@ export const TimelineScreen = () => {
     homeScore: game.finalScore?.home ?? 0,
   }));
 
-  const games = [...recordedEntries, ...historicalEntries].sort(
+  const games = [...(recordedEntries.length ? recordedEntries : fallbackRecordedEntries), ...historicalEntries].sort(
     (a, b) => new Date(b.playedAt).getTime() - new Date(a.playedAt).getTime(),
   );
 
@@ -62,7 +157,7 @@ export const TimelineScreen = () => {
               <View style={{ flex: 1 }}>
                 <Text style={styles.date}>{format(new Date(game.playedAt), 'MMM d, h:mm a')}</Text>
                 <Text style={styles.matchup}>
-                  {game.awayName} @ {game.homeName}
+                  {game.awayName} vs {game.homeName}
                 </Text>
                 <Text style={styles.meta}>{game.type === 'league' ? 'League' : 'Friendly'}</Text>
               </View>

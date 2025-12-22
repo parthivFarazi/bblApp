@@ -11,6 +11,8 @@ export type TeamProfile = {
 type TeamStoreState = {
   teams: Record<string, TeamProfile>;
   ensureTeam: (name: string, leagueId?: string) => string;
+  setTeams: (teams: Record<string, TeamProfile>) => void;
+  upsertTeam: (team: TeamProfile) => void;
 };
 
 const slugify = (value: string) => value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-');
@@ -19,6 +21,14 @@ export const useTeamStore = create<TeamStoreState>()(
   persist(
     (set, get) => ({
       teams: {},
+      setTeams: (teams) => set(() => ({ teams })),
+      upsertTeam: (team) =>
+        set((state) => ({
+          teams: {
+            ...state.teams,
+            [team.id]: team,
+          },
+        })),
       ensureTeam: (name, leagueId) => {
         const cleaned = name.trim();
         const slug = slugify(cleaned || 'team');

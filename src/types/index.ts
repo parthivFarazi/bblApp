@@ -184,6 +184,7 @@ export interface IndividualStatsRow {
     stealsWon: number;
     stealsLost: number;
     basesDefended: number;
+    basesDefendedSuccessful: number;
     basesStolen: number;
     rbi: number;
   };
@@ -211,6 +212,7 @@ export interface TeamStatsRow {
     stealsWon: number;
     stealsLost: number;
     basesDefended: number;
+    basesDefendedSuccessful: number;
     basesStolen: number;
   };
 }

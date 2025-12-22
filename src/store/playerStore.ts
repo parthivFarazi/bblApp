@@ -9,6 +9,7 @@ type PlayerStoreState = {
   players: Record<string, PlayerIdentity>;
   addPlayer: (player: PlayerIdentity) => void;
   upsertPlayers: (players: PlayerIdentity[]) => void;
+  replaceAll: (players: PlayerIdentity[]) => void;
 };
 
 const initialDirectory = playerIdentities.reduce<Record<string, PlayerIdentity>>(
@@ -43,6 +44,16 @@ export const usePlayerStore = create<PlayerStoreState>()(
               players[player.id] = player;
             }
           });
+          return { players };
+        }),
+      replaceAll: (list) =>
+        set(() => {
+          const players = list.reduce<Record<string, PlayerIdentity>>((acc, player) => {
+            if (!player.isGuest) {
+              acc[player.id] = player;
+            }
+            return acc;
+          }, {});
           return { players };
         }),
     }),
