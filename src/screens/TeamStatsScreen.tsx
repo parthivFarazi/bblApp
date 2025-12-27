@@ -13,7 +13,7 @@ import { useStatsStore } from '@/store/statsStore';
 import { useLeagueStore } from '@/store/leagueStore';
 import { buildTeamLeaderboard } from '@/utils/stats';
 import { StatScope, TeamStatsRow } from '@/types';
-import { fetchAllTeams, fetchGamesWithEvents } from '@/services/backend';
+import { fetchAllTeams, fetchGamesWithEvents, fetchLeagues } from '@/services/backend';
 
 const STAT_COLUMN_WIDTH = 70; // Uniform width for all stat columns
 
@@ -31,6 +31,7 @@ export const TeamStatsScreen = () => {
   const playerDirectory = useStatsStore((state) => state.playerDirectory);
   const dynamicTeamLabels = useStatsStore((state) => state.teamLabels);
   const hydrateStats = useStatsStore((state) => state.hydrate);
+  const setLeagues = useLeagueStore((state) => state.setLeagues);
 
   const mergedEvents = useMemo(() => [...recordedEvents], [recordedEvents]);
   const mergedGames = useMemo(() => [...recordedGames], [recordedGames]);
@@ -48,9 +49,10 @@ export const TeamStatsScreen = () => {
   useEffect(() => {
     const loadRemote = async () => {
       try {
-        const [{ games, events, gamePlayers }, teams] = await Promise.all([
+        const [{ games, events, gamePlayers }, teams, leagues] = await Promise.all([
           fetchGamesWithEvents(),
           fetchAllTeams(),
+          fetchLeagues(),
         ]);
 
         const playerDirectoryFromGames = gamePlayers.reduce<Record<string, any>>((acc, row) => {
@@ -113,12 +115,15 @@ export const TeamStatsScreen = () => {
           playerDirectory: playerDirectoryFromGames,
           teamLabels,
         });
+        if (leagues?.length) {
+          setLeagues(leagues.map((row) => ({ id: row.id, name: row.name, year: row.year })));
+        }
       } catch (error) {
         console.error('Failed to load remote stats', error);
       }
     };
     loadRemote();
-  }, [hydrateStats]);
+  }, [hydrateStats, setLeagues]);
 
   const yearOptions = useMemo(() => {
     const years = new Set<number>(availableYears);
@@ -224,7 +229,11 @@ export const TeamStatsScreen = () => {
     const baseColumns: ColumnDefinition[] = [
       { key: 'gamesPlayed', label: 'Games Played', short: 'GP', width: STAT_COLUMN_WIDTH },
       ...(scope === 'league'
-        ? [{ key: 'averageScore' as const, label: 'Average Score', short: 'AVG', precision: 1, width: STAT_COLUMN_WIDTH }]
+        ? [
+            { key: 'wins' as const, label: 'Wins', short: 'W', width: STAT_COLUMN_WIDTH },
+            { key: 'losses' as const, label: 'Losses', short: 'L', width: STAT_COLUMN_WIDTH },
+            { key: 'averageScore' as const, label: 'Avg Runs', short: 'AVG', precision: 1, width: STAT_COLUMN_WIDTH },
+          ]
         : []),
     ];
     return [...baseColumns, ...offense, ...defense, ...misc];

@@ -12,7 +12,7 @@ import { useStatsStore } from '@/store/statsStore';
 import { useLeagueStore } from '@/store/leagueStore';
 import { buildIndividualLeaderboard } from '@/utils/stats';
 import { IndividualStatsRow, StatScope } from '@/types';
-import { fetchAllTeams, fetchGamesWithEvents } from '@/services/backend';
+import { fetchAllTeams, fetchGamesWithEvents, fetchLeagues } from '@/services/backend';
 
 const STAT_COLUMN_WIDTH = 70; // Uniform width for all stat columns
 
@@ -60,6 +60,7 @@ export const IndividualStatsScreen = () => {
   const recordedGames = useStatsStore((state) => state.recordedGames);
   const playerDirectory = useStatsStore((state) => state.playerDirectory);
   const hydrateStats = useStatsStore((state) => state.hydrate);
+  const setLeagues = useLeagueStore((state) => state.setLeagues);
 
   const mergedEvents = useMemo(() => [...recordedEvents], [recordedEvents]);
   const mergedGames = useMemo(() => [...recordedGames], [recordedGames]);
@@ -101,9 +102,10 @@ export const IndividualStatsScreen = () => {
   useEffect(() => {
     const loadRemote = async () => {
       try {
-        const [{ games, events, gamePlayers }, teams] = await Promise.all([
+        const [{ games, events, gamePlayers }, teams, leagues] = await Promise.all([
           fetchGamesWithEvents(),
           fetchAllTeams(),
+          fetchLeagues(),
         ]);
 
         const playerDirectoryFromGames = gamePlayers.reduce<Record<string, any>>((acc, row) => {
@@ -166,12 +168,15 @@ export const IndividualStatsScreen = () => {
           playerDirectory: playerDirectoryFromGames,
           teamLabels,
         });
+        if (leagues?.length) {
+          setLeagues(leagues.map((row) => ({ id: row.id, name: row.name, year: row.year })));
+        }
       } catch (error) {
         console.error('Failed to load remote stats', error);
       }
     };
     loadRemote();
-  }, [hydrateStats]);
+  }, [hydrateStats, setLeagues]);
 
   const leaderboard = useMemo(
     () =>

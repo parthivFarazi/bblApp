@@ -310,6 +310,8 @@ export const buildTeamLeaderboard = ({
     const stats = {
       gamesPlayed: 0,
       averageScore: 0,
+      wins: 0,
+      losses: 0,
       atBats: 0,
       hits: 0,
       singles: 0,
@@ -346,15 +348,26 @@ export const buildTeamLeaderboard = ({
 
     stats.gamesPlayed = teamGames.length;
     if (teamGames.length) {
-      const totalRuns = teamGames.reduce((sum, game) => {
+      let totalRuns = 0;
+      teamGames.forEach((game) => {
         const isHome = game.homeTeamId === teamId;
         const runs = game.finalScore
           ? isHome
             ? game.finalScore.home
             : game.finalScore.away
           : 0;
-        return sum + runs;
-      }, 0);
+        const oppRuns = game.finalScore
+          ? isHome
+            ? game.finalScore.away
+            : game.finalScore.home
+          : 0;
+        totalRuns += runs;
+        if (runs > oppRuns) {
+          stats.wins += 1;
+        } else if (runs < oppRuns) {
+          stats.losses += 1;
+        }
+      });
       stats.averageScore = totalRuns / teamGames.length;
     }
 

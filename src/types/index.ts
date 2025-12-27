@@ -197,6 +197,8 @@ export interface TeamStatsRow {
   stats: {
     gamesPlayed: number;
     averageScore: number;
+    wins: number;
+    losses: number;
     atBats: number;
     hits: number;
     singles: number;
