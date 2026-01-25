@@ -35,6 +35,7 @@ interface GameStoreState {
   live?: LiveGameState;
   events: GameEvent[];
   recentPlays: GameEvent[];
+  undoStack: UndoSnapshot[];
   completedGames: CompletedGameRecord[];
   startGame: (payload: GameSetupPayload) => void;
   logHit: (type: keyof typeof hitValueMap) => void;
@@ -42,9 +43,18 @@ interface GameStoreState {
   logError: (defenderId: string) => void;
   logCaughtOut: (defenderId: string) => void;
   logSteal: (runnerId: string, defenderId: string, success: boolean) => void;
+  undoLastAction: () => void;
   completeGame: () => void;
   reset: () => void;
 }
+
+interface UndoSnapshot {
+  live: LiveGameState;
+  events: GameEvent[];
+  recentPlays: GameEvent[];
+}
+
+const MAX_UNDO = 30;
 
 const createScoreboardState = (teamIds: string[]) =>
   teamIds.reduce<LiveGameState['scoreboard']>((acc, teamId) => {
@@ -120,6 +130,16 @@ const appendEvent = (state: GameStoreState, event: GameEvent) => ({
   recentPlays: [event, ...state.recentPlays].slice(0, 6),
 });
 
+const pushUndoSnapshot = (state: GameStoreState) => {
+  if (!state.live) {
+    return state.undoStack;
+  }
+  return [
+    ...state.undoStack,
+    { live: state.live, events: state.events, recentPlays: state.recentPlays },
+  ].slice(-MAX_UNDO);
+};
+
 const createEventPayload = (
   live: LiveGameState,
   overrides: Partial<GameEvent>,
@@ -144,6 +164,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   live: undefined,
   events: [],
   recentPlays: [],
+  undoStack: [],
   completedGames: [],
   startGame: (payload) => {
     if (payload.type === 'friendly') {
@@ -171,6 +192,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         ),
         events: [],
         recentPlays: [],
+        undoStack: [],
       });
       return;
     }
@@ -219,6 +241,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         ),
         events: [],
         recentPlays: [],
+        undoStack: [],
       });
     }
   },
@@ -228,6 +251,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       if (!live) {
         return state;
       }
+      const undoStack = pushUndoSnapshot(state);
 
       const offenseLineup = live.lineups[live.offenseTeamId];
       const batter = getCurrentBatter(offenseLineup);
@@ -249,13 +273,17 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         },
       };
 
-      const event = createEventPayload(live, {
-        eventType: type,
-        baseStateBefore: result.before,
-        baseStateAfter: result.after,
-        runsScored: result.runsScored,
-        rbi: result.rbi,
-      }, batter.playerId);
+      const event = createEventPayload(
+        live,
+        {
+          eventType: type,
+          baseStateBefore: result.before,
+          baseStateAfter: result.after,
+          runsScored: result.runsScored,
+          rbi: result.rbi,
+        },
+        batter.playerId,
+      );
 
       const newLineups = {
         ...live.lineups,
@@ -273,6 +301,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       return {
         ...state,
         live: updatedLive,
+        undoStack,
         ...appendEvent(state, event),
       };
     }),
@@ -282,11 +311,23 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       if (!live) {
         return state;
       }
+      const undoStack = pushUndoSnapshot(state);
 
       if (live.strikes < 2) {
+        const lineup = live.lineups[live.offenseTeamId];
+        const batter = getCurrentBatter(lineup);
+        const event = createEventPayload(
+          live,
+          {
+            eventType: 'strike',
+          },
+          batter.playerId,
+        );
         return {
           ...state,
+          undoStack,
           live: { ...live, strikes: live.strikes + 1 },
+          ...appendEvent(state, event),
         };
       }
 
@@ -317,6 +358,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       return {
         ...state,
         live: updatedLive,
+        undoStack,
         ...appendEvent(state, event),
       };
     }),
@@ -324,6 +366,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     set((state) => {
       const live = state.live;
       if (!live) return state;
+      const undoStack = pushUndoSnapshot(state);
 
       const lineup = live.lineups[live.offenseTeamId];
       const batter = getCurrentBatter(lineup);
@@ -352,6 +395,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
             strikes: live.strikes + 1,
             scoreboard: updatedScoreboard,
           },
+          undoStack,
           ...appendEvent(state, event),
         };
       }
@@ -374,6 +418,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       return {
         ...state,
         live: updatedLive,
+        undoStack,
         ...appendEvent(state, event),
       };
     }),
@@ -381,6 +426,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     set((state) => {
       const live = state.live;
       if (!live) return state;
+      const undoStack = pushUndoSnapshot(state);
 
       const lineup = live.lineups[live.offenseTeamId];
       const batter = getCurrentBatter(lineup);
@@ -410,6 +456,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       return {
         ...state,
         live: updatedLive,
+        undoStack,
         ...appendEvent(state, event),
       };
     }),
@@ -417,6 +464,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     set((state) => {
       const live = state.live;
       if (!live) return state;
+      const undoStack = pushUndoSnapshot(state);
       const result = resolveSteal(live.bases, runnerId, success);
       let updatedLive: LiveGameState = {
         ...live,
@@ -474,7 +522,22 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       return {
         ...state,
         live: updatedLive,
+        undoStack,
         ...appendEvent(state, event),
+      };
+    }),
+  undoLastAction: () =>
+    set((state) => {
+      if (!state.undoStack.length) {
+        return state;
+      }
+      const snapshot = state.undoStack[state.undoStack.length - 1];
+      return {
+        ...state,
+        live: snapshot.live,
+        events: snapshot.events,
+        recentPlays: snapshot.recentPlays,
+        undoStack: state.undoStack.slice(0, -1),
       };
     }),
   completeGame: () =>
@@ -502,6 +565,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         ...state,
         mode: 'complete',
         live: { ...state.live, isComplete: true },
+        undoStack: [],
         completedGames: [completedGame, ...state.completedGames].slice(0, 50),
       };
     }),
@@ -511,5 +575,6 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       live: undefined,
       events: [],
       recentPlays: [],
+      undoStack: [],
     }),
 }));

@@ -1,16 +1,50 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Modal, ScrollView, StyleSheet, Text, View, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import { LiveGameStackParamList } from '@/navigation/LiveGameNavigator';
 import { useGameStore } from '@/store/gameStore';
-import { GameHalf, LiveGameState } from '@/types';
+import { EventType, GameEvent, GameHalf, LiveGameState } from '@/types';
 import { getCurrentBatter } from '@/utils/baseball';
 
 type Props = NativeStackScreenProps<LiveGameStackParamList, 'LiveGame'>;
 
 const halfIcon = (half: GameHalf) => (half === 'top' ? '▲' : '▼');
+
+const eventLabelMap: Record<EventType, string> = {
+  single: 'Single',
+  double: 'Double',
+  triple: 'Triple',
+  homerun: 'Home Run',
+  strike: 'Strike',
+  error: 'Error',
+  strikeout: 'Strikeout',
+  caught_out: 'Caught Out',
+  steal_success: 'Steal +',
+  steal_fail: 'Steal ✕',
+};
+
+const formatEventSummary = (event: GameEvent, lookup: Record<string, string>) => {
+  const label = eventLabelMap[event.eventType] ?? event.eventType;
+  const batterName = lookup[event.batterId] ?? 'Unknown';
+  const defenderName = event.defenderId ? lookup[event.defenderId] ?? 'Unknown' : undefined;
+  const runnerName = event.runnerId ? lookup[event.runnerId] ?? 'Unknown' : undefined;
+  let subject = batterName;
+
+  if (event.eventType === 'error' || event.eventType === 'caught_out') {
+    subject = defenderName ?? 'Unknown';
+  } else if (event.eventType === 'steal_success' || event.eventType === 'steal_fail') {
+    subject = runnerName ?? 'Unknown';
+  }
+
+  const extraDefender =
+    defenderName && (event.eventType === 'steal_success' || event.eventType === 'steal_fail')
+      ? ` (Def: ${defenderName})`
+      : '';
+  const halfLabel = event.half === 'top' ? 'Top' : 'Bottom';
+  return `${halfLabel} ${event.inning} • ${label} - ${subject}${extraDefender}`;
+};
 
 type DefenderAction =
   | { type: 'error' }
@@ -20,13 +54,20 @@ type DefenderAction =
 
 export const LiveGameScreen = ({ navigation }: Props) => {
   const live = useGameStore((state) => state.live);
+  const events = useGameStore((state) => state.events);
   const logHit = useGameStore((state) => state.logHit);
   const logStrike = useGameStore((state) => state.logStrike);
   const logError = useGameStore((state) => state.logError);
   const logCaughtOut = useGameStore((state) => state.logCaughtOut);
   const logSteal = useGameStore((state) => state.logSteal);
+  const undoLastAction = useGameStore((state) => state.undoLastAction);
+  const canUndo = useGameStore((state) => state.undoStack.length > 0);
   const completeGame = useGameStore((state) => state.completeGame);
   const [defenderPrompt, setDefenderPrompt] = useState<DefenderAction | null>(null);
+  const [eventNotice, setEventNotice] = useState<GameEvent | null>(null);
+  const [noticeVisible, setNoticeVisible] = useState(false);
+  const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prevEventCount = useRef(0);
 
   const canSteal = useMemo(() => {
     if (!live) return false;
@@ -49,6 +90,33 @@ export const LiveGameScreen = ({ navigation }: Props) => {
     });
     return map;
   }, [live]);
+
+  useEffect(() => {
+    if (events.length > prevEventCount.current) {
+      const latestEvent = events[events.length - 1];
+      setEventNotice(latestEvent);
+      setNoticeVisible(true);
+      if (noticeTimer.current) {
+        clearTimeout(noticeTimer.current);
+      }
+      noticeTimer.current = setTimeout(() => {
+        setNoticeVisible(false);
+      }, 1500);
+    } else if (events.length < prevEventCount.current) {
+      setNoticeVisible(false);
+      setEventNotice(null);
+    }
+    prevEventCount.current = events.length;
+  }, [events]);
+
+  useEffect(
+    () => () => {
+      if (noticeTimer.current) {
+        clearTimeout(noticeTimer.current);
+      }
+    },
+    [],
+  );
 
   if (!live) {
     return (
@@ -143,10 +211,17 @@ export const LiveGameScreen = ({ navigation }: Props) => {
             >
               <Text style={styles.actionLabel}>STEAL ✕</Text>
             </Pressable>
+          </View>
+
+          <View style={styles.grid}>
             <Pressable
-              style={styles.complete}
-              onPress={handleComplete}
+              style={[styles.actionSecondary, !canUndo && styles.disabled]}
+              disabled={!canUndo}
+              onPress={undoLastAction}
             >
+              <Text style={styles.actionLabel}>UNDO</Text>
+            </Pressable>
+            <Pressable style={styles.complete} onPress={handleComplete}>
               <Text style={styles.completeLabel}>End Game</Text>
             </Pressable>
           </View>
@@ -175,6 +250,14 @@ export const LiveGameScreen = ({ navigation }: Props) => {
           action={defenderPrompt}
         />
       </ScrollView>
+      {noticeVisible && eventNotice && (
+        <View style={styles.toastContainer} pointerEvents="none">
+          <View style={styles.toastCard}>
+            <Text style={styles.toastTitle}>Event logged</Text>
+            <Text style={styles.toastDetail}>{formatEventSummary(eventNotice, playerLookup)}</Text>
+          </View>
+        </View>
+      )}
     </SafeAreaView>
   );
 };
@@ -565,5 +648,36 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     textAlign: 'center',
     marginVertical: 8,
+  },
+  toastContainer: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+    alignItems: 'center',
+  },
+  toastCard: {
+    backgroundColor: '#0B1834',
+    borderRadius: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: '#1D3F73',
+  },
+  toastTitle: {
+    color: '#F2D680',
+    fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
+  toastDetail: {
+    color: '#F8FAFC',
+    fontSize: 14,
+    fontWeight: '600',
+    marginTop: 4,
   },
 });
