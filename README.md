@@ -14,7 +14,7 @@ This project translates the Delta Upsilon Pong Baseball League (DUBBL) product b
 
 1) Install Expo Go from the App Store/Play Store.
 2) Open this link in Expo Go (or scan the QR from the Expo update page):
-   - https://expo.dev/preview/update?message=latest+league+stats+updates&updateRuntimeVersion=1.0.0&createdAt=2025-12-27T18%3A12%3A01.501Z&slug=exp&projectId=6a0d6373-74a7-4a92-8a5e-af7133e17e04&group=aafbacde-1722-485e-9930-437da0bf9f2f
+   - https://expo.dev/preview/update?message=Live+scoring+undo+%2B+event+confirmations&updateRuntimeVersion=1.0.0&createdAt=2026-01-25T19%3A50%3A43.613Z&slug=exp&projectId=6a0d6373-74a7-4a92-8a5e-af7133e17e04&group=9dd41f71-940e-4d4c-b270-2ec55741ef3a
 3) The app loads over the air; no App Store/TestFlight required. Supabase is already wired.
 
 Future updates will be delivered automatically over the same link.
