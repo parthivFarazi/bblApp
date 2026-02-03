@@ -9,6 +9,7 @@ import { HomeScreen } from '@/screens/HomeScreen';
 import { WelcomeScreen } from '@/screens/WelcomeScreen';
 import { DuPasswordScreen } from '@/screens/DuPasswordScreen';
 import { StatsHubScreen } from '@/screens/StatsHubScreen';
+import { SchedulingScreen } from '@/screens/SchedulingScreen';
 import { useSessionStore } from '@/store/sessionStore';
 
 const Stack = createNativeStackNavigator<AppStackParamList>();
@@ -42,6 +43,7 @@ export default function App() {
               <Stack.Screen name="Home" component={HomeScreen} />
               <Stack.Screen name="LiveGameFlow" component={LiveGameNavigator} />
               <Stack.Screen name="StatsHub" component={StatsHubScreen} />
+              <Stack.Screen name="Scheduling" component={SchedulingScreen} />
             </>
           )}
         </Stack.Navigator>

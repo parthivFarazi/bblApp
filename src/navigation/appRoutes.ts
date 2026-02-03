@@ -4,5 +4,5 @@ export type AppStackParamList = {
   Home: undefined;
   LiveGameFlow: undefined;
   StatsHub: undefined;
+  Scheduling: undefined;
 };
-
