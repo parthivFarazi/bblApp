@@ -1,9 +1,9 @@
 {
   "expo": {
-    "name": "Pong Baseball League",
+    "name": "Pong Baseball App",
     "slug": "pong-baseball-league",
     "owner": "parthivfarazi",
-    "version": "1.0.0",
+    "version": "1.2.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
