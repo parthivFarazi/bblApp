@@ -1,14 +1,15 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { format } from 'date-fns';
 
 import { StatsStackParamList } from '@/navigation/StatsNavigator';
+import { PlayerStatsTable } from '@/components/PlayerStatsTable';
 import { useStatsStore } from '@/store/statsStore';
 import { sampleEvents, sampleGames, playerIdentities, leagueTeams } from '@/data/sampleData';
 import { buildIndividualLeaderboard } from '@/utils/stats';
-import { Game, GameEvent, PlayerIdentity } from '@/types';
+import { IndividualStatsRow } from '@/types';
 
 type Props = NativeStackScreenProps<StatsStackParamList, 'HistoryDetail'>;
 
@@ -19,6 +20,7 @@ const teamLookup = leagueTeams.reduce<Record<string, string>>((acc, team) => {
 
 export const GameHistoryDetailScreen = ({ route, navigation }: Props) => {
   const { gameId, source } = route.params;
+  const [sortBy, setSortBy] = useState<keyof IndividualStatsRow['stats']>('slugging');
   const recordedDetails = useStatsStore((state) => state.recordedDetails);
   const recordedGames = useStatsStore((state) => state.recordedGames);
   const recordedEvents = useStatsStore((state) => state.recordedEvents);
@@ -95,6 +97,32 @@ export const GameHistoryDetailScreen = ({ route, navigation }: Props) => {
     };
   }, [gameId, source, recordedDetails, recordedGames, recordedEvents, recordedPlayers, recordedTeamLabels]);
 
+  const leaderboard = useMemo(() => {
+    if (!detail) return [];
+    return buildIndividualLeaderboard({
+      events: detail.events,
+      games: [detail.game],
+      players: detail.players,
+      scope: 'overall',
+      sortBy,
+    });
+  }, [detail, sortBy]);
+
+  const innings = useMemo(() => {
+    if (!detail) return [];
+    const inningSet = new Set<number>();
+    detail.teamOrder.forEach((teamId) => {
+      const runs = detail.scoreboard[teamId]?.inningRuns ?? {};
+      Object.keys(runs).forEach((inning) => inningSet.add(Number(inning)));
+    });
+    const maxInning = Math.max(
+      1,
+      detail.game.plannedInnings ?? 0,
+      ...Array.from(inningSet),
+    );
+    return Array.from({ length: maxInning }, (_, index) => index + 1);
+  }, [detail]);
+
   if (!detail) {
     return (
       <SafeAreaView style={styles.safe}>
@@ -108,23 +136,7 @@ export const GameHistoryDetailScreen = ({ route, navigation }: Props) => {
     );
   }
 
-  const { game, teamLabels, scoreboard, events, players, teamOrder } = detail;
-  const leaders = buildIndividualLeaderboard({
-    events,
-    games: [game],
-    players,
-    scope: 'overall',
-  }).slice(0, 6);
-
-  const innings = useMemo(() => {
-    const inningSet = new Set<number>();
-    teamOrder.forEach((teamId) => {
-      const runs = scoreboard[teamId]?.inningRuns ?? {};
-      Object.keys(runs).forEach((inning) => inningSet.add(Number(inning)));
-    });
-    const maxInning = Math.max(1, game.plannedInnings ?? 0, ...Array.from(inningSet));
-    return Array.from({ length: maxInning }, (_, index) => index + 1);
-  }, [game.plannedInnings, scoreboard, teamOrder]);
+  const { game, teamLabels, scoreboard, teamOrder } = detail;
 
   const getTeamName = (teamId: string, index: number) =>
     teamLabels[teamId] ?? (index === 0 ? 'Visitors' : 'Home');
@@ -189,24 +201,12 @@ export const GameHistoryDetailScreen = ({ route, navigation }: Props) => {
           </View>
         </ScrollView>
 
-        <Text style={styles.sectionTitle}>Player Highlights</Text>
-        <View style={styles.card}>
-          {leaders.map((leader) => (
-            <View key={leader.playerId} style={styles.leaderRow}>
-              <View>
-                <Text style={styles.leaderName}>{leader.displayName}</Text>
-                <Text style={styles.leaderMeta}>
-                  {leader.stats.hits} H • AVG {leader.stats.battingAverage.toFixed(3)} • RBI{' '}
-                  {leader.stats.rbi}
-                </Text>
-              </View>
-              <Text style={styles.leaderRBI}>{leader.stats.slugging.toFixed(3)} SLG</Text>
-            </View>
-          ))}
-          {!leaders.length && (
-            <Text style={styles.emptyCopy}>No player stats recorded for this game.</Text>
-          )}
-        </View>
+        <Text style={styles.sectionTitle}>Player Stats</Text>
+        {leaderboard.length ? (
+          <PlayerStatsTable rows={leaderboard} sortBy={sortBy} onSort={setSortBy} />
+        ) : (
+          <Text style={styles.emptyCopy}>No player stats recorded for this game.</Text>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -319,24 +319,6 @@ const styles = StyleSheet.create({
   },
   tableContent: {
     flexGrow: 1,
-  },
-  leaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  leaderName: {
-    color: '#F8FAFC',
-    fontWeight: '600',
-  },
-  leaderMeta: {
-    color: '#94A3B8',
-    fontSize: 12,
-  },
-  leaderRBI: {
-    color: '#34D399',
-    fontWeight: '700',
-    fontSize: 18,
   },
   emptyState: {
     flex: 1,

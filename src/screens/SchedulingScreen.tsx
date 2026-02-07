@@ -14,7 +14,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { addDays, addMinutes, format, isSameDay, startOfDay } from 'date-fns';
+import { addDays, addMinutes, format, isSameDay, isSameMinute, startOfDay } from 'date-fns';
 
 import { AppStackParamList } from '@/navigation/appRoutes';
 import { supabase } from '@/services/supabase';
@@ -38,7 +38,7 @@ export const SchedulingScreen: FC<Props> = ({ navigation }) => {
           <Text style={styles.title}>Table Reservations</Text>
           <Text style={styles.copy}>
             {isBrother
-              ? 'Reserve a 2-hour block in 30-minute increments for league nights or friendlies.'
+              ? 'Reserve a 2-hour block any time of day in 30-minute increments.'
               : 'View upcoming reservations. DU brothers can reserve tables from this screen.'}
           </Text>
         </View>
@@ -52,8 +52,8 @@ export const SchedulingScreen: FC<Props> = ({ navigation }) => {
 const SLOT_MINUTES = 30;
 const BLOCK_MINUTES = 120;
 const DAYS_TO_SHOW = 10;
-const START_HOUR = 10;
-const END_HOUR = 22;
+const START_HOUR = 0;
+const END_HOUR = 24;
 const REFRESH_INTERVAL_MS = 10000;
 
 const showToast = (message: string) => {
@@ -109,6 +109,9 @@ const findOverlappingBooking = (
   });
 };
 
+const findBookingStartingAt = (start: Date, bookings: TableBooking[]) =>
+  bookings.find((booking) => isSameMinute(new Date(booking.startTime), start));
+
 const BookingCalendar = ({ isBrother }: { isBrother: boolean }) => {
   const bookings = useBookingStore((state) => state.bookings);
   const lastError = useBookingStore((state) => state.lastError);
@@ -133,6 +136,15 @@ const BookingCalendar = ({ isBrother }: { isBrother: boolean }) => {
   const dayBookings = useMemo(
     () => bookings.filter((booking) => isSameDay(new Date(booking.startTime), selectedDay)),
     [bookings, selectedDay],
+  );
+  const visibleSlots = useMemo(
+    () =>
+      daySlots.filter((slot) => {
+        const bookingAtStart = findBookingStartingAt(slot, dayBookings);
+        if (bookingAtStart) return true;
+        return !findOverlappingBooking(slot, dayBookings);
+      }),
+    [daySlots, dayBookings],
   );
 
   useFocusEffect(
@@ -165,7 +177,7 @@ const BookingCalendar = ({ isBrother }: { isBrother: boolean }) => {
 
   const handleSelectSlot = (slot: Date) => {
     if (!isBrother) return;
-    if (findOverlappingBooking(slot, bookings)) return;
+    if (findOverlappingBooking(slot, dayBookings)) return;
     setSelectedSlot(slot);
     setTeamA('');
     setTeamB('');
@@ -179,7 +191,7 @@ const BookingCalendar = ({ isBrother }: { isBrother: boolean }) => {
     const trimmedB = teamB.trim();
     const trimmedCaptain = captainName.trim();
     if (!trimmedA || !trimmedB || !trimmedCaptain) return;
-    if (findOverlappingBooking(selectedSlot, bookings)) {
+    if (findOverlappingBooking(selectedSlot, dayBookings)) {
       setModalVisible(false);
       showToast('That time is already booked.');
       return;
@@ -208,7 +220,8 @@ const BookingCalendar = ({ isBrother }: { isBrother: boolean }) => {
     <View style={styles.calendarCard}>
       <Text style={styles.cardLabel}>Table Calendar</Text>
       <Text style={styles.cardCopy}>
-        Reserve a 2-hour block in 30-minute increments. {isBrother ? 'Brothers only.' : 'Login required.'}
+        Reserve a 2-hour block any time of day in 30-minute increments.{' '}
+        {isBrother ? 'Brothers only.' : 'Login required.'}
       </Text>
       {lastError ? <Text style={styles.errorCopy}>Sync error: {lastError}</Text> : null}
 
@@ -238,38 +251,60 @@ const BookingCalendar = ({ isBrother }: { isBrother: boolean }) => {
       </ScrollView>
 
       <View style={styles.slotList}>
-        {daySlots.map((slot) => {
-          const booking = findOverlappingBooking(slot, dayBookings);
+        {visibleSlots.map((slot) => {
+          const bookingAtStart = findBookingStartingAt(slot, dayBookings);
+          const overlappingBooking =
+            bookingAtStart ?? findOverlappingBooking(slot, dayBookings);
+          const isBlocked = !!overlappingBooking;
           const startLabel = format(slot, 'h:mm a');
-          const endLabel = format(addMinutes(slot, BLOCK_MINUTES), 'h:mm a');
+          const slotDurationMinutes = bookingAtStart?.durationMinutes ?? BLOCK_MINUTES;
+          const endLabel = format(addMinutes(slot, slotDurationMinutes), 'h:mm a');
+          const actionLabel = bookingAtStart
+            ? 'Booked'
+            : isBlocked
+            ? 'Unavailable'
+            : 'Reserve';
           return (
             <Pressable
               key={slot.toISOString()}
               style={[
                 styles.slotRow,
-                booking && styles.slotBooked,
+                bookingAtStart && styles.slotBooked,
+                !bookingAtStart && isBlocked && styles.slotUnavailable,
                 !isBrother && styles.slotDisabled,
               ]}
               onPress={() => handleSelectSlot(slot)}
-              disabled={!isBrother || !!booking}
+              disabled={!isBrother || isBlocked}
             >
               <View style={{ flex: 1 }}>
                 <Text style={styles.slotTime}>
                   {startLabel} – {endLabel}
                 </Text>
-                {booking ? (
+                {bookingAtStart ? (
                   <Text style={styles.slotMeta}>
-                    {booking.teamA} vs {booking.teamB} • Captain {booking.captainName}
+                    {bookingAtStart.teamA} vs {bookingAtStart.teamB} • Captain{' '}
+                    {bookingAtStart.captainName}
                   </Text>
+                ) : isBlocked ? (
+                  <Text style={styles.slotMeta}>Unavailable</Text>
                 ) : (
                   <Text style={styles.slotMeta}>Available</Text>
                 )}
               </View>
-              <Text style={styles.slotAction}>{booking ? 'Booked' : 'Reserve'}</Text>
+              <Text
+                style={[
+                  styles.slotAction,
+                  isBlocked && styles.slotActionDisabled,
+                ]}
+              >
+                {actionLabel}
+              </Text>
             </Pressable>
           );
         })}
-        {!daySlots.length && <Text style={styles.calendarEmpty}>No remaining slots today.</Text>}
+        {!visibleSlots.length && (
+          <Text style={styles.calendarEmpty}>No remaining slots today.</Text>
+        )}
       </View>
 
       <Modal
@@ -463,6 +498,10 @@ const styles = StyleSheet.create({
     borderColor: '#F59E0B',
     backgroundColor: '#1F1A10',
   },
+  slotUnavailable: {
+    borderColor: '#334155',
+    backgroundColor: '#0F172A',
+  },
   slotDisabled: {
     opacity: 0.6,
   },
@@ -478,6 +517,9 @@ const styles = StyleSheet.create({
   slotAction: {
     color: '#38BDF8',
     fontWeight: '700',
+  },
+  slotActionDisabled: {
+    color: '#64748B',
   },
   calendarEmpty: {
     color: '#64748B',

@@ -45,10 +45,12 @@ type BookingStoreState = {
   clearLocal: () => void;
 };
 
+const BOOKING_BLOCK_MINUTES = 120;
+
 const mapBookingRow = (row: BookingRow): TableBooking => ({
   id: row.id,
   startTime: row.start_time,
-  durationMinutes: row.duration_minutes,
+  durationMinutes: BOOKING_BLOCK_MINUTES,
   teamA: row.team_a,
   teamB: row.team_b,
   captainName: row.captain_name,
@@ -94,7 +96,7 @@ export const useBookingStore = create<BookingStoreState>((set) => ({
       .from('table_bookings')
       .insert({
         start_time: booking.startTime,
-        duration_minutes: booking.durationMinutes,
+        duration_minutes: BOOKING_BLOCK_MINUTES,
         team_a: booking.teamA,
         team_b: booking.teamB,
         captain_name: booking.captainName,
