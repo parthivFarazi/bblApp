@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { ScrollView, StyleSheet, Text, View, Pressable } from 'react-native';
+import { Alert, ScrollView, StyleSheet, Text, View, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { format } from 'date-fns';
@@ -87,6 +87,10 @@ export const GameSummaryScreen = ({ navigation }: Props) => {
         remoteRecordedRef.current = true;
       } catch (error) {
         console.error('Failed to sync game to Supabase', error);
+        Alert.alert(
+          'Sync Warning',
+          'Game saved locally but failed to upload to the server. Stats may not appear in Stats Center until the next successful sync.',
+        );
       }
     }
   };
@@ -96,8 +100,8 @@ export const GameSummaryScreen = ({ navigation }: Props) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleReset = () => {
-    persistGame();
+  const handleReset = async () => {
+    await persistGame();
     reset();
     navigation.reset({
       index: 0,
@@ -105,8 +109,8 @@ export const GameSummaryScreen = ({ navigation }: Props) => {
     });
   };
 
-  const handleBackHome = () => {
-    persistGame();
+  const handleBackHome = async () => {
+    await persistGame();
     navigation.getParent()?.goBack();
   };
 

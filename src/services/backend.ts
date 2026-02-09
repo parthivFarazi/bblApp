@@ -75,6 +75,14 @@ export const fetchBrothers = async () => {
   return data ?? [];
 };
 
+export const fetchPlayers = async () => {
+  const { data, error } = await supabase
+    .from('players')
+    .select('id, is_guest, guest_name, brother_id, brothers:brother_id(display_name)');
+  if (error) throw error;
+  return data ?? [];
+};
+
 export const createBrother = async (firstName: string, lastName: string) => {
   const { data, error } = await supabase
     .from('brothers')
@@ -85,29 +93,47 @@ export const createBrother = async (firstName: string, lastName: string) => {
   return data;
 };
 
+/**
+ * Paginate through ALL rows of a Supabase table, bypassing the server-side
+ * PGRST_MAX_ROWS limit (default 1000) which `.limit()` alone cannot override.
+ */
+const fetchAllRows = async <T = any>(
+  table: string,
+  select: string,
+  pageSize = 1000,
+): Promise<T[]> => {
+  const all: T[] = [];
+  let from = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from(table)
+      .select(select)
+      .range(from, from + pageSize - 1);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    all.push(...(data as T[]));
+    if (data.length < pageSize) break; // last page
+    from += pageSize;
+  }
+  return all;
+};
+
 export const fetchGamesWithEvents = async () => {
-  const [{ data: games, error: gameError }, { data: events, error: eventError }, { data: gamePlayers, error: gpError }] =
-    await Promise.all([
-      supabase
-        .from('games')
-        .select(
-          'id, type, league_id, home_team_id, away_team_id, planned_innings, start_time, completed_at, final_score_home, final_score_away, notes',
-        ),
-      supabase
-        .from('game_events')
-        .select(
-          'id, game_id, event_type, batter_id, defender_id, runner_id, inning, half, base_state_before, base_state_after, runs_scored, rbi, timestamp, notes',
-        ),
-      supabase
-        .from('game_players')
-        .select(
-          'game_id, team_id, player_id, batting_order, is_active, players(id, is_guest, guest_name, brother_id, brothers:brother_id(display_name))',
-        ),
-    ]);
-  if (gameError) throw gameError;
-  if (eventError) throw eventError;
-  if (gpError) throw gpError;
-  return { games: games ?? [], events: events ?? [], gamePlayers: gamePlayers ?? [] };
+  const [games, events, gamePlayers] = await Promise.all([
+    fetchAllRows(
+      'games',
+      'id, type, league_id, home_team_id, away_team_id, planned_innings, start_time, completed_at, final_score_home, final_score_away, notes',
+    ),
+    fetchAllRows(
+      'game_events',
+      'id, game_id, event_type, batter_id, defender_id, runner_id, inning, half, base_state_before, base_state_after, runs_scored, rbi, timestamp, notes',
+    ),
+    fetchAllRows(
+      'game_players',
+      'id, game_id, team_id, player_id, batting_order, is_active, players(id, is_guest, guest_name, brother_id, brothers:brother_id(display_name))',
+    ),
+  ]);
+  return { games, events, gamePlayers };
 };
 
 export const persistGameToSupabase = async (live: LiveGameState, events: GameEvent[]) => {

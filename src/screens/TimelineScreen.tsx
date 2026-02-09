@@ -9,7 +9,7 @@ import { leagueTeams, sampleGames } from '@/data/sampleData';
 import { useStatsStore } from '@/store/statsStore';
 import { GameMode } from '@/types';
 import { StatsStackParamList } from '@/navigation/StatsNavigator';
-import { fetchAllTeams, fetchGamesWithEvents } from '@/services/backend';
+import { fetchAllTeams, fetchGamesWithEvents, fetchPlayers } from '@/services/backend';
 
 const teamLookup = leagueTeams.reduce<Record<string, string>>((acc, team) => {
   acc[team.id] = team.name;
@@ -26,14 +26,15 @@ export const TimelineScreen = () => {
   useEffect(() => {
     const loadRemote = async () => {
       try {
-        const [{ games, events, gamePlayers }, teams] = await Promise.all([
+        const [{ games, events, gamePlayers }, teams, players] = await Promise.all([
           fetchGamesWithEvents(),
           fetchAllTeams(),
+          fetchPlayers(),
         ]);
 
-        const playerDirectoryFromGames = gamePlayers.reduce<Record<string, any>>((acc, row) => {
-          const player = (row as any).players;
-          if (!player) return acc;
+        const playerById = new Map((players ?? []).map((player: any) => [player.id, player]));
+        const playerDirectoryFromGames = (players ?? []).reduce<Record<string, any>>((acc, player: any) => {
+          if (!player?.id) return acc;
           const displayName =
             player.guest_name ||
             player.brothers?.display_name ||
@@ -43,10 +44,37 @@ export const TimelineScreen = () => {
             displayName,
             brotherId: player.brother_id ?? undefined,
             isGuest: player.is_guest ?? false,
-            teamId: row.team_id,
+            teamId: undefined,
           };
           return acc;
         }, {});
+
+        gamePlayers.forEach((row) => {
+          const player = (row as any).players ?? playerById.get((row as any).player_id);
+          if (!player?.id) return;
+          const displayName =
+            player.guest_name ||
+            player.brothers?.display_name ||
+            player.id;
+          const baseIdentity = {
+            id: player.id,
+            displayName,
+            brotherId: player.brother_id ?? undefined,
+            isGuest: player.is_guest ?? false,
+            teamId: row.team_id,
+          };
+          playerDirectoryFromGames[player.id] = {
+            ...(playerDirectoryFromGames[player.id] ?? {}),
+            ...baseIdentity,
+            teamId: row.team_id,
+          };
+          if ((row as any).id) {
+            playerDirectoryFromGames[(row as any).id] = {
+              ...playerDirectoryFromGames[player.id],
+              teamId: row.team_id,
+            };
+          }
+        });
 
         const teamLabelsRemote = teams.reduce<Record<string, string>>((acc, team) => {
           acc[team.id] = team.name;

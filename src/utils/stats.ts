@@ -297,39 +297,109 @@ export const buildTeamLeaderboard = ({
   year,
 }: TeamLeaderboardConfig): TeamStatsRow[] => {
   const scopedEvents = filterEventsByScope(events, games, scope, { year, leagueId });
-  const playerStats = buildIndividualLeaderboard({
-    events: scopedEvents,
-    games,
-    players,
-    scope: 'overall',
-  });
-  const playerById = new Map(playerStats.map((row) => [row.playerId, row.stats]));
+  const gameLookup = new Map(games.map((g) => [g.id, g]));
   const rows: TeamStatsRow[] = [];
 
+  // Build a per-team stat accumulator directly from events using game context
+  // instead of relying on the player directory's teamId (which can be stale
+  // when a player appears on different teams across games).
+  const teamTotals = new Map<string, Totals>();
+  const ensureTeamTotals = (id: string) => {
+    if (!teamTotals.has(id)) teamTotals.set(id, zeroTotals());
+    return teamTotals.get(id)!;
+  };
+
+  scopedEvents.forEach((event) => {
+    const game = gameLookup.get(event.gameId);
+    if (!game) return;
+
+    // The game engine records half:'top' when the HOME team bats (teamA in
+    // initialLiveState) and half:'bottom' when the AWAY team bats.  This is
+    // the opposite of the standard baseball convention, but it is consistent
+    // across all persisted data so we match it here.
+    const battingTeamId = event.half === 'top' ? game.homeTeamId : game.awayTeamId;
+    const defendingTeamId = event.half === 'top' ? game.awayTeamId : game.homeTeamId;
+
+    const battingTotals = ensureTeamTotals(battingTeamId);
+
+    switch (event.eventType) {
+      case 'single':
+      case 'double':
+      case 'triple':
+      case 'homerun': {
+        const bases = eventBaseValue[event.eventType];
+        battingTotals.atBats += 1;
+        battingTotals.hits += 1;
+        battingTotals.totalBases += bases;
+        battingTotals.rbi += event.rbi;
+        if (event.eventType === 'single') battingTotals.singles += 1;
+        if (event.eventType === 'double') battingTotals.doubles += 1;
+        if (event.eventType === 'triple') battingTotals.triples += 1;
+        if (event.eventType === 'homerun') battingTotals.homeruns += 1;
+        break;
+      }
+      case 'strikeout':
+        battingTotals.atBats += 1;
+        battingTotals.strikeouts += 1;
+        break;
+      case 'caught_out': {
+        battingTotals.atBats += 1;
+        const defTotals = ensureTeamTotals(defendingTeamId);
+        defTotals.catches += 1;
+        break;
+      }
+      case 'error': {
+        const defTotals = ensureTeamTotals(defendingTeamId);
+        defTotals.errors += 1;
+        break;
+      }
+      case 'steal_success':
+      case 'steal_fail': {
+        battingTotals.stealsAttempted += 1;
+        if (event.eventType === 'steal_success') {
+          battingTotals.stealsWon += 1;
+          battingTotals.basesStolen += 1;
+          battingTotals.rbi += event.rbi ?? 0;
+        } else {
+          battingTotals.stealsLost += 1;
+        }
+        const defTotals = ensureTeamTotals(defendingTeamId);
+        defTotals.basesDefended += 1;
+        if (event.eventType === 'steal_fail') {
+          defTotals.basesDefendedSuccessful += 1;
+        }
+        break;
+      }
+      default:
+        break;
+    }
+  });
+
   teamIds.forEach((teamId) => {
+    const totals = teamTotals.get(teamId) ?? zeroTotals();
     const stats = {
       gamesPlayed: 0,
       averageScore: 0,
       wins: 0,
       losses: 0,
-      atBats: 0,
-      hits: 0,
-      singles: 0,
-      doubles: 0,
-      triples: 0,
-      homeruns: 0,
-      strikeouts: 0,
+      atBats: totals.atBats,
+      hits: totals.hits,
+      singles: totals.singles,
+      doubles: totals.doubles,
+      triples: totals.triples,
+      homeruns: totals.homeruns,
+      strikeouts: totals.strikeouts,
       battingAverage: 0,
       slugging: 0,
-    catches: 0,
-    errors: 0,
-    stealsAttempted: 0,
-    stealsWon: 0,
-    stealsLost: 0,
-    basesDefended: 0,
-    basesDefendedSuccessful: 0,
-    basesStolen: 0,
-  };
+      catches: totals.catches,
+      errors: totals.errors,
+      stealsAttempted: totals.stealsAttempted,
+      stealsWon: totals.stealsWon,
+      stealsLost: totals.stealsLost,
+      basesDefended: totals.basesDefended,
+      basesDefendedSuccessful: totals.basesDefendedSuccessful,
+      basesStolen: totals.basesStolen,
+    };
 
     const teamGames = games.filter((game) => {
       const isParticipant = game.homeTeamId === teamId || game.awayTeamId === teamId;
@@ -371,29 +441,6 @@ export const buildTeamLeaderboard = ({
       stats.averageScore = totalRuns / teamGames.length;
     }
 
-    playerStats.forEach((row) => {
-      if (row.teamId && row.teamId !== teamId) {
-        return;
-      }
-      const details = playerById.get(row.playerId);
-      if (!details) return;
-      stats.atBats += details.atBats;
-      stats.hits += details.hits;
-      stats.singles += details.singles;
-      stats.doubles += details.doubles;
-      stats.triples += details.triples;
-      stats.homeruns += details.homeruns;
-      stats.strikeouts += details.strikeouts;
-      stats.catches += details.catches;
-      stats.errors += details.errors;
-      stats.stealsAttempted += details.stealsAttempted;
-      stats.stealsWon += details.stealsWon;
-      stats.stealsLost += details.stealsLost;
-      stats.basesDefended += details.basesDefended;
-      stats.basesDefendedSuccessful += details.basesDefendedSuccessful ?? 0;
-      stats.basesStolen += details.basesStolen;
-    });
-
     stats.battingAverage = stats.atBats ? stats.hits / stats.atBats : 0;
     const totalBases =
       stats.singles + stats.doubles * 2 + stats.triples * 3 + stats.homeruns * 4;
@@ -408,4 +455,128 @@ export const buildTeamLeaderboard = ({
   });
 
   return rows.sort((a, b) => b.stats.slugging - a.stats.slugging);
+};
+
+type LocalRecordedDetail = {
+  game: Game;
+  events: GameEvent[];
+  players: PlayerIdentity[];
+};
+
+const getGameTime = (value?: string) => {
+  if (!value) return Number.NaN;
+  const parsed = new Date(value).getTime();
+  return Number.isNaN(parsed) ? Number.NaN : parsed;
+};
+
+const scoresMatch = (local: Game, remote: Game) => {
+  if (!local.finalScore || !remote.finalScore) return true;
+  if (local.homeTeamId === remote.homeTeamId && local.awayTeamId === remote.awayTeamId) {
+    return (
+      local.finalScore.home === remote.finalScore.home &&
+      local.finalScore.away === remote.finalScore.away
+    );
+  }
+  if (local.homeTeamId === remote.awayTeamId && local.awayTeamId === remote.homeTeamId) {
+    return (
+      local.finalScore.home === remote.finalScore.away &&
+      local.finalScore.away === remote.finalScore.home
+    );
+  }
+  return false;
+};
+
+const findMatchingGame = (
+  local: Game,
+  remoteGames: Game[],
+  matchWindowMs: number,
+) => {
+  const localTime = getGameTime(local.startTime);
+  let bestMatch: { game: Game; diff: number } | null = null;
+
+  remoteGames.forEach((remote) => {
+    if (remote.type !== local.type) return;
+    const sameTeams =
+      (remote.homeTeamId === local.homeTeamId && remote.awayTeamId === local.awayTeamId) ||
+      (remote.homeTeamId === local.awayTeamId && remote.awayTeamId === local.homeTeamId);
+    if (!sameTeams) return;
+    if (!scoresMatch(local, remote)) return;
+
+    const remoteTime = getGameTime(remote.startTime);
+    if (Number.isNaN(localTime) || Number.isNaN(remoteTime)) {
+      if (!bestMatch) {
+        bestMatch = { game: remote, diff: Number.POSITIVE_INFINITY };
+      }
+      return;
+    }
+
+    const diff = Math.abs(remoteTime - localTime);
+    if (diff <= matchWindowMs && (!bestMatch || diff < bestMatch.diff)) {
+      bestMatch = { game: remote, diff };
+    }
+  });
+
+  return bestMatch?.game;
+};
+
+export const mergeLocalStatsData = ({
+  games,
+  events,
+  players,
+  localDetails,
+  matchWindowMs = 10 * 60 * 1000,
+}: {
+  games: Game[];
+  events: GameEvent[];
+  players: PlayerIdentity[];
+  localDetails: LocalRecordedDetail[];
+  matchWindowMs?: number;
+}) => {
+  if (!localDetails.length) {
+    return { games, events, players };
+  }
+
+  const mergedGames = [...games];
+  const mergedEvents = [...events];
+  const playerMap = new Map(players.map((player) => [player.id, player]));
+  const eventCountByGame = new Map<string, number>();
+
+  events.forEach((event) => {
+    eventCountByGame.set(event.gameId, (eventCountByGame.get(event.gameId) ?? 0) + 1);
+  });
+
+  localDetails.forEach((detail) => {
+    detail.players.forEach((player) => {
+      playerMap.set(player.id, player);
+    });
+
+    const directMatch = mergedGames.find((game) => game.id === detail.game.id);
+    const matchedGame =
+      directMatch ?? findMatchingGame(detail.game, mergedGames, matchWindowMs);
+
+    if (matchedGame) {
+      const existingCount = eventCountByGame.get(matchedGame.id) ?? 0;
+      if (existingCount === 0 && detail.events.length) {
+        mergedEvents.push(
+          ...detail.events.map((event) => ({
+            ...event,
+            gameId: matchedGame.id,
+          })),
+        );
+        eventCountByGame.set(matchedGame.id, detail.events.length);
+      }
+      return;
+    }
+
+    mergedGames.push(detail.game);
+    if (detail.events.length) {
+      mergedEvents.push(...detail.events);
+      eventCountByGame.set(
+        detail.game.id,
+        (eventCountByGame.get(detail.game.id) ?? 0) + detail.events.length,
+      );
+    }
+  });
+
+  return { games: mergedGames, events: mergedEvents, players: Array.from(playerMap.values()) };
 };

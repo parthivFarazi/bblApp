@@ -5,15 +5,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   availableYears,
   leagueTeams,
-  playerIdentities,
-  sampleEvents,
-  sampleGames,
 } from '@/data/sampleData';
 import { useStatsStore } from '@/store/statsStore';
 import { useLeagueStore } from '@/store/leagueStore';
 import { buildTeamLeaderboard } from '@/utils/stats';
-import { StatScope, TeamStatsRow } from '@/types';
-import { fetchAllTeams, fetchGamesWithEvents, fetchLeagues } from '@/services/backend';
+import { Game, GameEvent, PlayerIdentity, StatScope, TeamStatsRow } from '@/types';
+import { fetchAllTeams, fetchGamesWithEvents, fetchLeagues, fetchPlayers } from '@/services/backend';
 
 const STAT_COLUMN_WIDTH = 70; // Uniform width for all stat columns
 
@@ -26,38 +23,37 @@ export const TeamStatsScreen = () => {
     { type: 'year' | 'league' | 'sort'; options: Array<{ value: string; label: string }> } | null
   >(null);
 
-  const recordedEvents = useStatsStore((state) => state.recordedEvents);
-  const recordedGames = useStatsStore((state) => state.recordedGames);
-  const playerDirectory = useStatsStore((state) => state.playerDirectory);
-  const dynamicTeamLabels = useStatsStore((state) => state.teamLabels);
   const hydrateStats = useStatsStore((state) => state.hydrate);
   const setLeagues = useLeagueStore((state) => state.setLeagues);
 
-  const mergedEvents = useMemo(() => [...recordedEvents], [recordedEvents]);
-  const mergedGames = useMemo(() => [...recordedGames], [recordedGames]);
-  const recordedPlayers = useMemo(() => Object.values(playerDirectory), [playerDirectory]);
-  const mergedPlayers = useMemo(() => recordedPlayers, [recordedPlayers]);
+  // Use local state for fetched data so the leaderboard computes directly
+  // from the fetched data without depending on the store round-trip.
+  const [mergedEvents, setMergedEvents] = useState<GameEvent[]>([]);
+  const [mergedGames, setMergedGames] = useState<Game[]>([]);
+  const [mergedPlayers, setMergedPlayers] = useState<PlayerIdentity[]>([]);
+  const [fetchedTeamLabels, setFetchedTeamLabels] = useState<Record<string, string>>({});
 
   const teamLabelLookup = useMemo(() => {
     const base = leagueTeams.reduce<Record<string, string>>((acc, team) => {
       acc[team.id] = team.name;
       return acc;
     }, {});
-    return { ...base, ...dynamicTeamLabels };
-  }, [dynamicTeamLabels]);
+    return { ...base, ...fetchedTeamLabels };
+  }, [fetchedTeamLabels]);
 
   useEffect(() => {
     const loadRemote = async () => {
       try {
-        const [{ games, events, gamePlayers }, teams, leagues] = await Promise.all([
+        const [{ games, events, gamePlayers }, teams, leagues, players] = await Promise.all([
           fetchGamesWithEvents(),
           fetchAllTeams(),
           fetchLeagues(),
+          fetchPlayers(),
         ]);
 
-        const playerDirectoryFromGames = gamePlayers.reduce<Record<string, any>>((acc, row) => {
-          const player = (row as any).players;
-          if (!player) return acc;
+        const playerById = new Map((players ?? []).map((player: any) => [player.id, player]));
+        const playerDirectoryFromGames = (players ?? []).reduce<Record<string, any>>((acc, player: any) => {
+          if (!player?.id) return acc;
           const displayName =
             player.guest_name ||
             player.brothers?.display_name ||
@@ -67,10 +63,37 @@ export const TeamStatsScreen = () => {
             displayName,
             brotherId: player.brother_id ?? undefined,
             isGuest: player.is_guest ?? false,
-            teamId: row.team_id,
+            teamId: undefined,
           };
           return acc;
         }, {});
+
+        gamePlayers.forEach((row) => {
+          const player = (row as any).players ?? playerById.get((row as any).player_id);
+          if (!player?.id) return;
+          const displayName =
+            player.guest_name ||
+            player.brothers?.display_name ||
+            player.id;
+          const baseIdentity = {
+            id: player.id,
+            displayName,
+            brotherId: player.brother_id ?? undefined,
+            isGuest: player.is_guest ?? false,
+            teamId: row.team_id,
+          };
+          playerDirectoryFromGames[player.id] = {
+            ...(playerDirectoryFromGames[player.id] ?? {}),
+            ...baseIdentity,
+            teamId: row.team_id,
+          };
+          if ((row as any).id) {
+            playerDirectoryFromGames[(row as any).id] = {
+              ...playerDirectoryFromGames[player.id],
+              teamId: row.team_id,
+            };
+          }
+        });
 
         const teamLabels = teams.reduce<Record<string, string>>((acc, team) => {
           acc[team.id] = team.name;
@@ -115,6 +138,13 @@ export const TeamStatsScreen = () => {
           playerDirectory: playerDirectoryFromGames,
           teamLabels,
         });
+
+        // Use remote data directly — pagination ensures all events are fetched.
+        setMergedGames(mappedGames);
+        setMergedEvents(mappedEvents);
+        setMergedPlayers(Object.values(playerDirectoryFromGames));
+        setFetchedTeamLabels(teamLabels);
+
         if (leagues?.length) {
           setLeagues(leagues.map((row) => ({ id: row.id, name: row.name, year: row.year })));
         }
