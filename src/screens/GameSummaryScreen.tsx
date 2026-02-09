@@ -34,7 +34,9 @@ export const GameSummaryScreen = ({ navigation }: Props) => {
     );
   }
 
-  const teamIds = Object.keys(live.teamLabels);
+  const teamIds = live.teamOrder.length ? live.teamOrder : Object.keys(live.teamLabels);
+  const homeTeamId = teamIds[0];
+  const awayTeamId = teamIds[1] ?? teamIds[0];
   const playedInnings = Math.max(
     1,
     live.inning,
@@ -50,13 +52,13 @@ export const GameSummaryScreen = ({ navigation }: Props) => {
     id: live.gameId,
     type: live.type,
     leagueId: live.leagueId,
-    homeTeamId: teamIds[1] ?? teamIds[0],
-    awayTeamId: teamIds[0],
+    homeTeamId,
+    awayTeamId,
     plannedInnings: playedInnings,
     startTime: new Date().toISOString(),
     finalScore: {
-      home: live.scoreboard[teamIds[1] ?? teamIds[0]].runs,
-      away: live.scoreboard[teamIds[0]].runs,
+      home: live.scoreboard[homeTeamId]?.runs ?? 0,
+      away: live.scoreboard[awayTeamId]?.runs ?? 0,
     },
   };
   const leaders = buildIndividualLeaderboard({

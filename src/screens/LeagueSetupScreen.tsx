@@ -50,8 +50,8 @@ export const LeagueSetupScreen: FC<Props> = ({ navigation }) => {
   const setTeams = useTeamStore((state) => state.setTeams);
   const upsertTeamProfile = useTeamStore((state) => state.upsertTeam);
   const [step, setStep] = useState<Step>('names');
-  const [teamAName, setTeamAName] = useState('Home Team');
-  const [teamBName, setTeamBName] = useState('Away Team');
+  const [teamAName, setTeamAName] = useState('Top Team');
+  const [teamBName, setTeamBName] = useState('Bottom Team');
   const [leagueName, setLeagueName] = useState('Official League');
   const [leagueYear, setLeagueYear] = useState(`${new Date().getFullYear()}`);
   const [selectedLeagueId, setSelectedLeagueId] = useState<string>('new');
@@ -403,11 +403,11 @@ export const LeagueSetupScreen: FC<Props> = ({ navigation }) => {
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>Confirm League Lineups</Text>
       <Text style={styles.sectionCopy}>
-        Review both teams before starting the official league game.
+        Away team bats first (▲ top), home team bats second (▼ bottom).
       </Text>
       <View style={styles.summaryGrid}>
         <View style={styles.summaryCard}>
-          <Text style={styles.summaryTitle}>{teamAName}</Text>
+          <Text style={styles.summaryTitle}>▲ {teamAName} (Away)</Text>
           {lineups.teamA.map((player, index) => (
             <Text key={player.id} style={styles.summaryRow}>
               {index + 1}. {player.displayName}
@@ -415,7 +415,7 @@ export const LeagueSetupScreen: FC<Props> = ({ navigation }) => {
           ))}
         </View>
         <View style={styles.summaryCard}>
-          <Text style={styles.summaryTitle}>{teamBName}</Text>
+          <Text style={styles.summaryTitle}>▼ {teamBName} (Home)</Text>
           {lineups.teamB.map((player, index) => (
             <Text key={player.id} style={styles.summaryRow}>
               {index + 1}. {player.displayName}
@@ -499,16 +499,16 @@ export const LeagueSetupScreen: FC<Props> = ({ navigation }) => {
           >
             <Text style={styles.outlineButtonLabel}>Save League Preset</Text>
           </Pressable>
-          <Text style={styles.subheading}>Home Team Name</Text>
+          <Text style={styles.subheading}>Away Team Name  ▲ Bats 1st (Top)</Text>
           <TextInput
             style={styles.input}
             value={teamAName}
             onChangeText={setTeamAName}
-            placeholder="Home Team"
+            placeholder="Away Team"
             placeholderTextColor="#475569"
           />
           <SelectTrigger
-            label="Use previous Home team name"
+            label="Use previous Away team name"
             helper={
               leagueTeamOptions.length
                 ? 'Pick from teams already in this league'
@@ -522,16 +522,16 @@ export const LeagueSetupScreen: FC<Props> = ({ navigation }) => {
               })
             }
           />
-          <Text style={styles.subheading}>Away Team Name</Text>
+          <Text style={styles.subheading}>Home Team Name  ▼ Bats 2nd (Bottom)</Text>
           <TextInput
             style={styles.input}
             value={teamBName}
             onChangeText={setTeamBName}
-            placeholder="Away Team"
+            placeholder="Home Team"
             placeholderTextColor="#475569"
           />
           <SelectTrigger
-            label="Use previous Away team name"
+            label="Use previous Home team name"
             helper={
               leagueTeamOptions.length
                 ? 'Pick from teams already in this league'

@@ -2,11 +2,13 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Modal, ScrollView, StyleSheet, Text, View, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import PagerView from 'react-native-pager-view';
 
 import { LiveGameStackParamList } from '@/navigation/LiveGameNavigator';
 import { useGameStore } from '@/store/gameStore';
 import { EventType, GameEvent, GameHalf, LiveGameState } from '@/types';
 import { getCurrentBatter } from '@/utils/baseball';
+import { LiveStatsPanel } from './LiveStatsPanel';
 
 type Props = NativeStackScreenProps<LiveGameStackParamList, 'LiveGame'>;
 
@@ -66,6 +68,7 @@ export const LiveGameScreen = ({ navigation }: Props) => {
   const [defenderPrompt, setDefenderPrompt] = useState<DefenderAction | null>(null);
   const [eventNotice, setEventNotice] = useState<GameEvent | null>(null);
   const [noticeVisible, setNoticeVisible] = useState(false);
+  const [activePage, setActivePage] = useState(0);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prevEventCount = useRef(0);
 
@@ -143,113 +146,131 @@ export const LiveGameScreen = ({ navigation }: Props) => {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <ScrollView contentContainerStyle={styles.container}>
-        <View style={styles.header}>
-        <View style={styles.headingBox}>
-          <Text style={styles.badge}>Inning {live.inning}</Text>
-          <Text style={styles.heading} numberOfLines={1} ellipsizeMode="tail">
-            {halfIcon(live.half)} {battingTeam}
-          </Text>
-        </View>
-          <View style={styles.counters}>
-            <Counter label="Strikes" value={live.strikes} />
-            <Counter label="Outs" value={live.outs} />
+      <PagerView
+        style={styles.pager}
+        initialPage={0}
+        overdrag
+        onPageSelected={(e) => setActivePage(e.nativeEvent.position)}
+      >
+        <ScrollView key="scoring" contentContainerStyle={styles.container}>
+          <View style={styles.header}>
+          <View style={styles.headingBox}>
+            <Text style={styles.badge}>Inning {live.inning}</Text>
+            <Text style={styles.heading} numberOfLines={1} ellipsizeMode="tail">
+              {halfIcon(live.half)} {battingTeam}
+            </Text>
           </View>
-        </View>
+            <View style={styles.counters}>
+              <Counter label="Strikes" value={live.strikes} />
+              <Counter label="Outs" value={live.outs} />
+            </View>
+          </View>
 
-        <Scoreboard live={live} batterName={currentBatter?.identity.displayName} />
-        <Bases bases={live.bases} playerLookup={playerLookup} />
+          <Scoreboard live={live} batterName={currentBatter?.identity.displayName} />
+          <Bases bases={live.bases} playerLookup={playerLookup} />
 
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>Offense Controls</Text>
-          <View style={styles.grid}>
-            {['single', 'double', 'triple', 'homerun'].map((type) => (
-              <Pressable key={type} style={styles.action} onPress={() => logHit(type as any)}>
-                <Text style={styles.actionLabel}>{type.toUpperCase()}</Text>
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>Offense Controls</Text>
+            <View style={styles.grid}>
+              {['single', 'double', 'triple', 'homerun'].map((type) => (
+                <Pressable key={type} style={styles.action} onPress={() => logHit(type as any)}>
+                  <Text style={styles.actionLabel}>{type.toUpperCase()}</Text>
+                </Pressable>
+              ))}
+            </View>
+
+            <View style={styles.grid}>
+              <Pressable style={styles.actionSecondary} onPress={logStrike}>
+                <Text style={styles.actionLabel}>STRIKE</Text>
               </Pressable>
-            ))}
-          </View>
+              <Pressable
+                style={[styles.actionSecondary, !defenders.length && styles.disabled]}
+                disabled={!defenders.length}
+                onPress={() => setDefenderPrompt({ type: 'error' })}
+              >
+                <Text style={styles.actionLabel}>ERROR</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.actionSecondary, !defenders.length && styles.disabled]}
+                disabled={!defenders.length}
+                onPress={() => setDefenderPrompt({ type: 'caught_out' })}
+              >
+                <Text style={styles.actionLabel}>CAUGHT OUT</Text>
+              </Pressable>
+            </View>
 
-          <View style={styles.grid}>
-            <Pressable style={styles.actionSecondary} onPress={logStrike}>
-              <Text style={styles.actionLabel}>STRIKE</Text>
-            </Pressable>
-            <Pressable
-              style={[styles.actionSecondary, !defenders.length && styles.disabled]}
-              disabled={!defenders.length}
-              onPress={() => setDefenderPrompt({ type: 'error' })}
-            >
-              <Text style={styles.actionLabel}>ERROR</Text>
-            </Pressable>
-            <Pressable
-              style={[styles.actionSecondary, !defenders.length && styles.disabled]}
-              disabled={!defenders.length}
-              onPress={() => setDefenderPrompt({ type: 'caught_out' })}
-            >
-              <Text style={styles.actionLabel}>CAUGHT OUT</Text>
-            </Pressable>
-          </View>
+            <View style={styles.grid}>
+              <Pressable
+                style={[
+                  styles.actionSecondary,
+                  (!canSteal || !runnerId || !defenders.length) && styles.disabled,
+                ]}
+                disabled={!canSteal || !runnerId || !defenders.length}
+                onPress={() => setDefenderPrompt({ type: 'steal_success' })}
+              >
+                <Text style={styles.actionLabel}>STEAL +</Text>
+              </Pressable>
+              <Pressable
+                style={[
+                  styles.actionSecondary,
+                  (!canSteal || !runnerId || !defenders.length) && styles.disabled,
+                ]}
+                disabled={!canSteal || !runnerId || !defenders.length}
+                onPress={() => setDefenderPrompt({ type: 'steal_fail' })}
+              >
+                <Text style={styles.actionLabel}>STEAL ✕</Text>
+              </Pressable>
+            </View>
 
-          <View style={styles.grid}>
-            <Pressable
-              style={[
-                styles.actionSecondary,
-                (!canSteal || !runnerId || !defenders.length) && styles.disabled,
-              ]}
-              disabled={!canSteal || !runnerId || !defenders.length}
-              onPress={() => setDefenderPrompt({ type: 'steal_success' })}
-            >
-              <Text style={styles.actionLabel}>STEAL +</Text>
-            </Pressable>
-            <Pressable
-              style={[
-                styles.actionSecondary,
-                (!canSteal || !runnerId || !defenders.length) && styles.disabled,
-              ]}
-              disabled={!canSteal || !runnerId || !defenders.length}
-              onPress={() => setDefenderPrompt({ type: 'steal_fail' })}
-            >
-              <Text style={styles.actionLabel}>STEAL ✕</Text>
-            </Pressable>
+            <View style={styles.grid}>
+              <Pressable
+                style={[styles.actionSecondary, !canUndo && styles.disabled]}
+                disabled={!canUndo}
+                onPress={undoLastAction}
+              >
+                <Text style={styles.actionLabel}>UNDO</Text>
+              </Pressable>
+              <Pressable style={styles.complete} onPress={handleComplete}>
+                <Text style={styles.completeLabel}>End Game</Text>
+              </Pressable>
+            </View>
           </View>
+        </ScrollView>
 
-          <View style={styles.grid}>
-            <Pressable
-              style={[styles.actionSecondary, !canUndo && styles.disabled]}
-              disabled={!canUndo}
-              onPress={undoLastAction}
-            >
-              <Text style={styles.actionLabel}>UNDO</Text>
-            </Pressable>
-            <Pressable style={styles.complete} onPress={handleComplete}>
-              <Text style={styles.completeLabel}>End Game</Text>
-            </Pressable>
-          </View>
+        <View key="stats" style={styles.statsPage}>
+          <LiveStatsPanel />
         </View>
-        <DefenderPicker
-          visible={Boolean(defenderPrompt)}
-          defenders={defenders}
-          onClose={() => setDefenderPrompt(null)}
-          onSelect={(defenderId) => {
-            if (!defenderPrompt) return;
-            if (defenderPrompt.type === 'error') {
-              logError(defenderId);
-            } else if (defenderPrompt.type === 'caught_out') {
-              logCaughtOut(defenderId);
-            } else if (defenderPrompt.type === 'steal_success') {
-              if (runnerId) {
-                logSteal(runnerId, defenderId, true);
-              }
-            } else if (defenderPrompt.type === 'steal_fail') {
-              if (runnerId) {
-                logSteal(runnerId, defenderId, false);
-              }
+      </PagerView>
+
+      {/* Page indicator */}
+      <View style={styles.pageIndicator}>
+        <View style={[styles.pageDot, activePage === 0 && styles.pageDotActive]} />
+        <View style={[styles.pageDot, activePage === 1 && styles.pageDotActive]} />
+      </View>
+
+      <DefenderPicker
+        visible={Boolean(defenderPrompt)}
+        defenders={defenders}
+        onClose={() => setDefenderPrompt(null)}
+        onSelect={(defenderId) => {
+          if (!defenderPrompt) return;
+          if (defenderPrompt.type === 'error') {
+            logError(defenderId);
+          } else if (defenderPrompt.type === 'caught_out') {
+            logCaughtOut(defenderId);
+          } else if (defenderPrompt.type === 'steal_success') {
+            if (runnerId) {
+              logSteal(runnerId, defenderId, true);
             }
-            setDefenderPrompt(null);
-          }}
-          action={defenderPrompt}
-        />
-      </ScrollView>
+          } else if (defenderPrompt.type === 'steal_fail') {
+            if (runnerId) {
+              logSteal(runnerId, defenderId, false);
+            }
+          }
+          setDefenderPrompt(null);
+        }}
+        action={defenderPrompt}
+      />
       {noticeVisible && eventNotice && (
         <View style={styles.toastContainer} pointerEvents="none">
           <View style={styles.toastCard}>
@@ -301,7 +322,7 @@ const Scoreboard = ({
           <Text style={styles.scoreValue}>{live.scoreboard[teamId].runs}</Text>
         </View>
       ))}
-      <Text style={styles.scoreNote}>Home team shows on top (starts first); away team appears below.</Text>
+      <Text style={styles.scoreNote}>Away team (▲ top) bats first; home team (▼ bottom) bats second.</Text>
       <View style={styles.batterRow}>
         <View>
           <Text style={styles.batterLabel}>At Bat</Text>
@@ -679,5 +700,26 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     marginTop: 4,
+  },
+  pager: {
+    flex: 1,
+  },
+  statsPage: {
+    flex: 1,
+  },
+  pageIndicator: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 8,
+  },
+  pageDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#1D3F73',
+  },
+  pageDotActive: {
+    backgroundColor: '#CFB53B',
   },
 });

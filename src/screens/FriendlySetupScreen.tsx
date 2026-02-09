@@ -372,11 +372,11 @@ export const FriendlySetupScreen: FC<Props> = ({ navigation }) => {
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>Confirm Lineups</Text>
       <Text style={styles.sectionCopy}>
-        Review both teams before launching the live scorebook. You can always step back to edit.
+        First team bats in the top (▲), second team bats in the bottom (▼).
       </Text>
       <View style={styles.summaryGrid}>
         <View style={styles.summaryCard}>
-          <Text style={styles.summaryTitle}>{teamAName}</Text>
+          <Text style={styles.summaryTitle}>▲ {teamAName}</Text>
           {lineups.teamA.map((player, index) => (
             <Text key={player.id} style={styles.summaryRow}>
               {index + 1}. {player.displayName}
@@ -384,7 +384,7 @@ export const FriendlySetupScreen: FC<Props> = ({ navigation }) => {
           ))}
         </View>
         <View style={styles.summaryCard}>
-          <Text style={styles.summaryTitle}>{teamBName}</Text>
+          <Text style={styles.summaryTitle}>▼ {teamBName}</Text>
           {lineups.teamB.map((player, index) => (
             <Text key={player.id} style={styles.summaryRow}>
               {index + 1}. {player.displayName}
@@ -401,8 +401,9 @@ export const FriendlySetupScreen: FC<Props> = ({ navigation }) => {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Team Names</Text>
           <Text style={styles.sectionCopy}>
-            Label each squad and build your lineups. You can end the game whenever you're done.
+            Label each squad and build your lineups. The first team bats in the top (▲) of each inning.
           </Text>
+          <Text style={styles.subheading}>▲ Bats 1st (Top)</Text>
           <TextInput
             style={styles.input}
             value={teamAName}
@@ -410,6 +411,7 @@ export const FriendlySetupScreen: FC<Props> = ({ navigation }) => {
             placeholder="Visitors"
             placeholderTextColor="#475569"
           />
+          <Text style={styles.subheading}>▼ Bats 2nd (Bottom)</Text>
           <TextInput
             style={styles.input}
             value={teamBName}

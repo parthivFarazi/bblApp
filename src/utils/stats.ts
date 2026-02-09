@@ -313,10 +313,7 @@ export const buildTeamLeaderboard = ({
     const game = gameLookup.get(event.gameId);
     if (!game) return;
 
-    // The game engine records half:'top' when the HOME team bats (teamA in
-    // initialLiveState) and half:'bottom' when the AWAY team bats.  This is
-    // the opposite of the standard baseball convention, but it is consistent
-    // across all persisted data so we match it here.
+    // In the DB, home_team_id is always the team that bats in the top half.
     const battingTeamId = event.half === 'top' ? game.homeTeamId : game.awayTeamId;
     const defendingTeamId = event.half === 'top' ? game.awayTeamId : game.homeTeamId;
 

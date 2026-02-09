@@ -28,9 +28,9 @@ const buildScoreboardFromEvents = (
   };
 
   events.forEach((event) => {
-    // top = away batting / home defending, bottom = home batting / away defending
-    const battingTeam = event.half === 'top' ? awayId : homeId;
-    const defendingTeam = event.half === 'top' ? homeId : awayId;
+    // In the DB, home_team_id is always the team that bats in the top half.
+    const battingTeam = event.half === 'top' ? homeId : awayId;
+    const defendingTeam = event.half === 'top' ? awayId : homeId;
 
     if (HIT_TYPES.has(event.eventType)) {
       sb[battingTeam].hits += 1;
