@@ -1,6 +1,7 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 
+import { PersistentScrollbar } from '@/components/PersistentScrollbar';
 import { useGameStore } from '@/store/gameStore';
 import { buildIndividualLeaderboard } from '@/utils/stats';
 import { Game, IndividualStatsRow } from '@/types';
@@ -36,6 +37,15 @@ const formatStat = (value: number, precision?: number) => {
 export const LiveStatsPanel = () => {
   const live = useGameStore((state) => state.live);
   const events = useGameStore((state) => state.events);
+  const [scrollMetrics, setScrollMetrics] = useState({
+    contentHeight: 0,
+    containerHeight: 0,
+    offsetY: 0,
+  });
+
+  const updateScrollMetrics = (next: Partial<typeof scrollMetrics>) => {
+    setScrollMetrics((prev) => ({ ...prev, ...next }));
+  };
 
   const teamIds = useMemo(
     () => (live?.teamOrder.length ? live.teamOrder : Object.keys(live?.teamLabels ?? {})),
@@ -87,86 +97,99 @@ export const LiveStatsPanel = () => {
   if (!live) return null;
 
   return (
-    <ScrollView style={styles.page} contentContainerStyle={styles.content}>
-      <Text style={styles.title}>Live Stats</Text>
-
-      {/* Inning Breakdown */}
-      <Text style={styles.sectionLabel}>Inning Breakdown</Text>
+    <View style={styles.page}>
       <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.tableScroll}
-        contentContainerStyle={styles.tableScrollContent}
+        style={styles.scroll}
+        contentContainerStyle={styles.content}
+        onLayout={(event) =>
+          updateScrollMetrics({ containerHeight: event.nativeEvent.layout.height })
+        }
+        onContentSizeChange={(_, height) => updateScrollMetrics({ contentHeight: height })}
+        onScroll={(event) => updateScrollMetrics({ offsetY: event.nativeEvent.contentOffset.y })}
+        scrollEventThrottle={16}
+        showsVerticalScrollIndicator
       >
-        <View style={styles.table}>
-          {/* Header */}
-          <View style={styles.tableHeader}>
-            <Text style={[styles.tableCell, styles.teamCell]}>Team</Text>
-            {innings.map((inn) => (
-              <Text key={inn} style={[styles.tableCell, styles.inningCell]}>
-                {inn}
-              </Text>
-            ))}
-            <Text style={[styles.tableCell, styles.inningCell, styles.totalCell]}>R</Text>
-          </View>
-          {/* Team rows */}
-          {teamIds.map((teamId, idx) => (
-            <View key={teamId} style={[styles.tableRow, idx % 2 === 0 && styles.rowAlt]}>
-              <Text style={[styles.tableCell, styles.teamCell]} numberOfLines={1}>
-                {live.teamLabels[teamId]}
-              </Text>
+        <Text style={styles.title}>Live Stats</Text>
+
+        {/* Inning Breakdown */}
+        <Text style={styles.sectionLabel}>Inning Breakdown</Text>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.tableScroll}
+          contentContainerStyle={styles.tableScrollContent}
+        >
+          <View style={styles.table}>
+            {/* Header */}
+            <View style={styles.tableHeader}>
+              <Text style={[styles.tableCell, styles.teamCell]}>Team</Text>
               {innings.map((inn) => (
                 <Text key={inn} style={[styles.tableCell, styles.inningCell]}>
-                  {live.scoreboard[teamId]?.inningRuns[inn] ?? 0}
+                  {inn}
                 </Text>
               ))}
-              <Text style={[styles.tableCell, styles.inningCell, styles.totalCell]}>
-                {live.scoreboard[teamId]?.runs ?? 0}
-              </Text>
+              <Text style={[styles.tableCell, styles.inningCell, styles.totalCell]}>R</Text>
             </View>
-          ))}
-        </View>
-      </ScrollView>
-
-      {/* Individual Player Stats */}
-      <Text style={styles.sectionLabel}>Player Stats</Text>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator
-        style={styles.tableScroll}
-        contentContainerStyle={styles.tableScrollContent}
-      >
-        <View style={styles.table}>
-          {/* Header */}
-          <View style={styles.tableHeader}>
-            <Text style={[styles.tableCell, styles.nameCell]}>Player</Text>
-            {STAT_COLUMNS.map((col) => (
-              <Text key={col.key} style={[styles.tableCell, styles.statCell]}>
-                {col.label}
-              </Text>
+            {/* Team rows */}
+            {teamIds.map((teamId, idx) => (
+              <View key={teamId} style={[styles.tableRow, idx % 2 === 0 && styles.rowAlt]}>
+                <Text style={[styles.tableCell, styles.teamCell]} numberOfLines={1}>
+                  {live.teamLabels[teamId]}
+                </Text>
+                {innings.map((inn) => (
+                  <Text key={inn} style={[styles.tableCell, styles.inningCell]}>
+                    {live.scoreboard[teamId]?.inningRuns[inn] ?? 0}
+                  </Text>
+                ))}
+                <Text style={[styles.tableCell, styles.inningCell, styles.totalCell]}>
+                  {live.scoreboard[teamId]?.runs ?? 0}
+                </Text>
+              </View>
             ))}
           </View>
-          {/* Player rows */}
-          {leaders.map((row, idx) => (
-            <View key={row.playerId} style={[styles.tableRow, idx % 2 === 0 && styles.rowAlt]}>
-              <Text style={[styles.tableCell, styles.nameCell]} numberOfLines={1}>
-                {row.displayName}
-              </Text>
+        </ScrollView>
+
+        {/* Individual Player Stats */}
+        <Text style={styles.sectionLabel}>Player Stats</Text>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator
+          style={styles.tableScroll}
+          contentContainerStyle={styles.tableScrollContent}
+        >
+          <View style={styles.table}>
+            {/* Header */}
+            <View style={styles.tableHeader}>
+              <Text style={[styles.tableCell, styles.nameCell]}>Player</Text>
               {STAT_COLUMNS.map((col) => (
                 <Text key={col.key} style={[styles.tableCell, styles.statCell]}>
-                  {formatStat(row.stats[col.key], col.precision)}
+                  {col.label}
                 </Text>
               ))}
             </View>
-          ))}
-          {leaders.length === 0 && (
-            <View style={styles.emptyRow}>
-              <Text style={styles.emptyText}>No events recorded yet</Text>
-            </View>
-          )}
-        </View>
+            {/* Player rows */}
+            {leaders.map((row, idx) => (
+              <View key={row.playerId} style={[styles.tableRow, idx % 2 === 0 && styles.rowAlt]}>
+                <Text style={[styles.tableCell, styles.nameCell]} numberOfLines={1}>
+                  {row.displayName}
+                </Text>
+                {STAT_COLUMNS.map((col) => (
+                  <Text key={col.key} style={[styles.tableCell, styles.statCell]}>
+                    {formatStat(row.stats[col.key], col.precision)}
+                  </Text>
+                ))}
+              </View>
+            ))}
+            {leaders.length === 0 && (
+              <View style={styles.emptyRow}>
+                <Text style={styles.emptyText}>No events recorded yet</Text>
+              </View>
+            )}
+          </View>
+        </ScrollView>
       </ScrollView>
-    </ScrollView>
+      <PersistentScrollbar {...scrollMetrics} />
+    </View>
   );
 };
 
@@ -174,6 +197,9 @@ const styles = StyleSheet.create({
   page: {
     flex: 1,
     backgroundColor: '#050D1E',
+  },
+  scroll: {
+    flex: 1,
   },
   content: {
     padding: 20,
